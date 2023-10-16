@@ -35,6 +35,7 @@ export class Dispatcher {
         this.running = false
     }
 
+
     on = (typ: MessageType, callback: DispatchCallback ) => {
         this.mapping.set(typ, callback)
     }

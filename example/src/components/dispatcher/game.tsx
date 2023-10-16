@@ -8,6 +8,7 @@ enum GameCommand {
     JoinGame = "join_game",
     NewGameAck = "new_game_ack",
     NewGameProp = "new_game_prop",
+    Hearbeat = "game_heartbeat",
 }
 
 type Game = {
@@ -15,6 +16,8 @@ type Game = {
     users: string[]
     server: string
     accepted: boolean
+    timer?: NodeJS.Timer | undefined
+    state?: number
 }
 
 type NewGame = {
@@ -66,6 +69,9 @@ export const Game = () => {
                 console.log(`Received ${GameCommand.NewGameAck} : ${JSON.stringify(payload)}`)
                 setGames((x) => {
                     if (payload.server != node.libp2p.peerId.toString()) {
+                        const game = x.get(payload.id)
+                        if (game)
+                            clearInterval(game!.timer)
                         x.delete(payload.id)
                         return new Map<string, Game>(x)
                     }
@@ -75,6 +81,21 @@ export const Game = () => {
                     const game = x.get(payload.id)
                     if (game) {
                         game!.accepted = true
+                        if (!game.state) game.state = 0
+                        game!.state++
+                        if (!game.timer) {
+                            game!.timer = setInterval(() => {
+                                d.emit(GameCommand.Hearbeat, {id:payload.id, state: game!.state})
+                                setGames((x) => {
+                                    const game = x.get(payload.id)
+                                    if (game) {
+                                        game!.state!++
+                                        x.set(payload.id, game)
+                                    }
+                                    return new Map<string, Game>(x)
+                                })
+                            }, 1000)
+                        }
                         x.set(payload.id, game!)
                     }
                     return new Map<string, Game>(x)
@@ -85,14 +106,14 @@ export const Game = () => {
                 setGames((x) => {
                     if (!x.has(payload.id))
                         console.error("unknown game " + payload.id)
-                    
+
                     const game = x.get(payload.id)
                     game?.users.push(payload.user)
                     x.set(payload.id, game!)
                     return new Map<string, Game>(x)
                 })
             })
-    
+
             await d.start()
 
             console.log("Created server")
@@ -171,7 +192,6 @@ export const Client = () => {
             const a:NewGameAck = {server: payload.server, id: payload.id, user: payload.user}
             const r = await dispatcherRef.current!.emit(GameCommand.NewGameAck, a)
             console.log(r)
-
         } else {
             setgames((x) => [...x.filter((v) => v.id != payload.id), {id: payload.id, accepted: true, server: payload.server, users: [payload.user]}])
         }
@@ -184,6 +204,10 @@ export const Client = () => {
 
             const d = new Dispatcher(node, encoder, decoder)
             d.on(GameCommand.NewGameProp, ackGame)
+            d.on(GameCommand.Hearbeat, (payload:any, msg:any) => {
+                if (payload.id == gameRef.current)
+                    console.log(payload)
+            })
 
             await d.start()
 
@@ -218,8 +242,9 @@ export const Client = () => {
                 </div>
             }
             {
-                games.map((v) => <div key={v.id}>({v.id}) <button disabled={user == "" } onClick={() => dispatcher?.emit("join_game", {id: v.id, user: user, server: v.server})}>Join</button></div>)
+                games.filter((v) => v.id != game).map((v) => <div key={v.id}>({v.id}) <button disabled={user == "" } onClick={() => dispatcher?.emit("join_game", {id: v.id, user: user, server: v.server})}>Join</button></div>)
             }
         </>
+
     )
 }
