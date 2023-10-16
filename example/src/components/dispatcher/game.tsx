@@ -112,9 +112,13 @@ export const Game = () => {
             <h2>Game Server - {node?.libp2p.peerId.toString()}</h2>
             <h4>{ready ? "ready" : "setting up..."}</h4>
             {
-                Array.from(games.keys()).map((key) => <div key={key}>
-                    {games.get(key)!.accepted && "* "} {key} : {games.get(key)!.users.join(", ")}
-                </div>)
+                Array.from(games.keys()).map((key) => {
+                    const game = games.get(key)
+                    if (!game) return
+                    return <div key={key}>
+                        {game.accepted && "* "} {key} : {game.users.join(", ")}
+                    </div>
+                })
             }
         </>
     )
