@@ -1,20 +1,23 @@
-import React from 'react';
-import logo from './logo.svg';
 import './App.css';
-import Dispatch from './components/dispatcher/dispatch';
 import { ContentPairProvider, LightNodeProvider } from '@waku/react';
-import { Protocols} from "@waku/sdk"
+import { Protocols} from "@waku/interfaces"
 import { Client, Game } from './components/dispatcher/game';
+import { DispatcherProvider } from './hooks/useDispatcher';
+import { CONTENT_TOPIC } from './constants';
+import Pair from './components/shareWithDevice/pair';
+
 
 function App() {
   return (
     <div className="App">
-      <LightNodeProvider protocols={[Protocols.LightPush, Protocols.Filter, Protocols.Store]}>
-        <ContentPairProvider contentTopic='/dispatcher/1/test/json'>
-          <Game />
-          <div>
-            <Client />
-          </div>
+      <LightNodeProvider options={{defaultBootstrap: true}} protocols={[Protocols.LightPush, Protocols.Filter, Protocols.Store]}>
+        <ContentPairProvider contentTopic={CONTENT_TOPIC} ephemeral={true}>
+          <DispatcherProvider>
+            <div>
+              <Pair />
+            </div>
+
+          </DispatcherProvider>
         </ContentPairProvider>
       </LightNodeProvider>
     </div>
@@ -22,3 +25,11 @@ function App() {
 }
 
 export default App;
+
+/*            <div style={{display: "none"}}>
+              <Game />
+              <div>
+                <Client />
+              </div>
+            </div>
+            */

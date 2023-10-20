@@ -1,0 +1,1 @@
+export const CONTENT_TOPIC = "/dispatcher/1/game/json"
