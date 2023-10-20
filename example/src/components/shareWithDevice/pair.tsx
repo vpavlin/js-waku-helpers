@@ -97,24 +97,24 @@ const Pair = () => {
 
     }, [dispatcher, privateKey])
 
-   /* useEffect(() => {
-        const pairedItem = localStorage.getItem("pairedAccounts")
-        if (!pairedItem) return
-
-        const paired:PairedAccount[] = JSON.parse(pairedItem)
-
-        setPairedAccounts((x) => {
-
-            for (const p of paired) {
-                x.set(p.address, p)
-            }
-            return new Map<string, PairedAccount>(x)
-        })
-    }, [])
-
     useEffect(() => {
+        if (pairedAccounts.size == 0) {
+            const pairedItem = localStorage.getItem("pairedAccounts")
+            if (!pairedItem) return
+
+            const paired:PairedAccount[] = JSON.parse(pairedItem)
+
+            setPairedAccounts((x) => {
+
+                for (const p of paired) {
+                    x.set(p.address, p)
+                }
+                return new Map<string, PairedAccount>(x)
+            })
+        }
+
         localStorage.setItem("pairedAccounts", JSON.stringify([...pairedAccounts.values()]))
-    }, [pairedAccounts])*/
+    }, [pairedAccounts])
 
 
     useEffect(() => {
