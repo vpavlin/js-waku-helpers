@@ -86,13 +86,16 @@ const Pair = () => {
                         values.push({value: payload.value, timestamp: meta.timestamp || new Date().toString()})
                         x.set(signer, values)
 
-                        if (!meta.fromStore) {
+                        if (false && !meta.fromStore) {
                             const options: NotificationOptions = {
                                 timestamp: parseInt(meta.timestamp || new Date().toString()),
                                 body: payload.value,
                                 dir: 'ltr',
                             };
                             const notification = new Notification('Notification', options);
+                            notification.onclick = () => {
+                                window.open(window.location.href)
+                            }
                         }
                         return new Map<string, RecievedData[]>(x)
                     }
