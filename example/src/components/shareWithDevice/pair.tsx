@@ -233,7 +233,7 @@ const Pair = () => {
                         {
                             [...pairedAccounts.values()].map((p) => 
                             <div>
-                                <div><input type="checkbox" onChange={(e) => setReceivers((x) => e.target.checked ? [...x, p.address] : [...x.filter((r) => r != p.address)])}/><strong>{p.name}</strong> ({p.address})</div>
+                                <div><input type="checkbox" onChange={(e) => setReceivers((x) => e.target.checked ? [...x, p.address] : [...x.filter((r) => r != p.address)])}/><strong>{p.name || p.address}</strong></div>
                                 <div>{received.get(p.address)?.map((v) => <div>{v.value.startsWith("http") ? <a href={v.value} target="_blank">{v.value}</a> : v.value} ({new Date(parseInt(v.timestamp)).toLocaleString()})</div>)}</div>
                             </div>
                             )
