@@ -241,7 +241,7 @@ const Pair = () => {
                     </div>
                     
                 }
-        <img src="/logo192.png" style={{margin: "2em auto"}} />
+        <div style={{margin: "2em auto"}}><img src="/logo192.png" /></div>
         </div>
     }
     </>)
