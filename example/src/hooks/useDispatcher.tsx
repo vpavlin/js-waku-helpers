@@ -28,11 +28,14 @@ export const DispatcherProvider: React.FunctionComponent<ProviderProps> = (props
     useEffect(() => {
         if (!node || !encoder || !decoder) return
         (async () => {
-        const d = new Dispatcher(node, encoder, decoder)
-        await d.start()
-        setDispatcher(d)
+            const d = new Dispatcher(node, encoder, decoder)
+            await d.start()
+            setDispatcher(d)
         })()
-
+        return () => {
+            if (dispatcher)
+                dispatcher.stop()
+        }
     }, [node, encoder, decoder])
 
     const result = useMemo(() => ({

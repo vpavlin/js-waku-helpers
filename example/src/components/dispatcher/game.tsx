@@ -1,6 +1,6 @@
 import { useCreateLightNode, useContentPair, useWaku } from "@waku/react"
 import { useState, useEffect, useRef } from "react"
-import { Dispatcher } from "../../lib/dispatcher"
+import { DispatchMetadata, Dispatcher, Signer } from "../../lib/dispatcher"
 import useIdentity from "../../hooks/useIdentity"
 import { generatePrivateKey } from "@waku/message-encryption/ecies"
 import { Wallet } from "ethers"
@@ -132,7 +132,7 @@ export const Game = () => {
             
             const d = dispatcher
             d.registerKey(privateKey)
-            d.on(GameCommand.NewGame, async (payload:NewGame, msg:any) => {
+            d.on(GameCommand.NewGame, async (payload:NewGame) => {
                 console.log(`Received ${GameCommand.NewGame} : ${JSON.stringify(payload)}`)
                 const key = generatePrivateKey()
                 const w = new Wallet(utils.bytesToHex(key))
@@ -150,7 +150,7 @@ export const Game = () => {
                 const r = await d.emit(GameCommand.NewGameProp, p, wallet)
                 console.log(r.recipients)
             })
-            d.on(GameCommand.NewGameAck, async (payload: NewGameAck, msg: any) => {
+            d.on(GameCommand.NewGameAck, async (payload: NewGameAck) => {
                 console.log(`Received ${GameCommand.NewGameAck} : ${JSON.stringify(payload)}`)
                 setGames((x) => {
                     if (payload.server != wallet?.address!) {
@@ -186,7 +186,7 @@ export const Game = () => {
                     return new Map<string, Game>(x)
                 })
             }, true)
-            d.on(GameCommand.JoinGame, async (payload:any, msg:any, signer?: string) => {
+            d.on(GameCommand.JoinGame, async (payload:any, signer: Signer, meta: DispatchMetadata) => {
                 console.log(`Received ${GameCommand.JoinGame}: ${JSON.stringify(payload)}`)
                 setGames((x) => {
                     if (!x.has(payload.id)) {
@@ -205,7 +205,7 @@ export const Game = () => {
                     return new Map<string, Game>(x)
                 })
             }, true)
-            d.on(GameCommand.Turn, (payload: GameTurn, msg: any, signer?: string) => {
+            d.on(GameCommand.Turn, (payload: GameTurn, signer: Signer, meta: DispatchMetadata) => {
                 console.log(payload)
                 console.log(signer)
                 if (signer !== payload.user) return
@@ -256,7 +256,7 @@ export const Game = () => {
                     return new Map<string, Game>(x)
                 })
             }, true)
-            d.on(GameCommand.Close, (payload: GameClose, msg:any, signer?: string) => {
+            d.on(GameCommand.Close, (payload: GameClose, signer: Signer, meta: DispatchMetadata) => {
                 setGames((x) => {
                     console.log("Closing")
                     if (!x.has(payload.id)) {
@@ -331,7 +331,7 @@ export const Client = () => {
     }
 
 
-    const ackGame = async (payload:NewGameProp, msg:any, signer?:string) => {
+    const ackGame = async (payload:NewGameProp, signer: Signer, meta: DispatchMetadata) => {
         console.log(`Received ${GameCommand.NewGameProp}: ${JSON.stringify(payload)}`) 
         console.log(`${game} && ${gameNameRef.current} == ${payload.name} && ${payload.user} == ${wallet?.address}`)
         if (!gameRef.current && payload.name == gameNameRef.current && wallet?.address == payload.user) {
@@ -350,12 +350,12 @@ export const Client = () => {
             const d = dispatcher
             d.registerKey(privateKey)
             d.on(GameCommand.NewGameProp, ackGame, true)
-            d.on(GameCommand.NewGameAck, (payload: NewGameAck, msg: any, signer?: string) => {
+            d.on(GameCommand.NewGameAck, (payload: NewGameAck, signer: Signer, meta: DispatchMetadata) => {
                 if (signer == payload.user) {
                     setGames((x) => [...x.filter((v) => v.id != payload.id), {id: payload.id, publicKey: "", users: [payload.user], server: payload.server, state: undefined, round: undefined}])
                 }
             }, true)
-            d.on(GameCommand.Hearbeat, (payload:GameHeartbeat, msg:any, signer?: string) => {
+            d.on(GameCommand.Hearbeat, (payload:GameHeartbeat, signer: Signer, meta: DispatchMetadata) => {
                 if (gameRef.current && payload.id == gameRef.current?.id && payload.server == signer && payload.server == gameRef.current.server) {
                     const g = {...gameRef.current}
                     g.round = payload.round
@@ -365,12 +365,12 @@ export const Client = () => {
                 }
 
             }, true)
-            d.on(GameCommand.JoinAck, (payload: GameJoinAck, msg: any, signer?: string) => {
+            d.on(GameCommand.JoinAck, (payload: GameJoinAck, signer: Signer, meta: DispatchMetadata) => {
                 if (!gameRef.current && payload.name == gameNameRef.current && wallet?.address == payload.user && payload.server == signer) {
                     setGame({id: payload.id, publicKey: payload.publicKey, server: payload.server, state: payload.state, users: [payload.user], round: undefined})
                 }
             }, true)
-            d.on(GameCommand.Done, (payload: GameDone, msg:any, signer?: string) => {
+            d.on(GameCommand.Done, (payload: GameDone, signer: Signer, meta: DispatchMetadata) => {
                 setGames((x) => [...x.filter((v) => {
                     if (v.id == payload.id && v.server == signer) return false
 
@@ -383,7 +383,7 @@ export const Client = () => {
 
                 setGame(undefined)
             }, true)
-            d.on(GameCommand.PlayerDone, (payload: PlayerDone, msg: any, signer?: string) => {
+            d.on(GameCommand.PlayerDone, (payload: PlayerDone, signer: Signer, meta: DispatchMetadata) => {
                 if (gameRef.current && gameRef.current.id == payload.id && wallet?.address == payload.user) {
                     console.log("It's over!")
                 }

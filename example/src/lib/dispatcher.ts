@@ -1,6 +1,7 @@
-import { LightNode, IDecodedMessage, Waku } from "@waku/interfaces"
+import { LightNode, IDecodedMessage, Waku, StoreQueryOptions } from "@waku/interfaces"
 import {
     bytesToUtf8,
+    createEncoder,
     utf8ToBytes,
     waitForRemotePeer,
 } from "@waku/sdk"
@@ -30,23 +31,45 @@ type IDispatchMessage = {
 type DispachInfo = {
     callback: DispatchCallback
     verifySender: boolean
+    acceptOnlyEncrypted: boolean
+}
+
+export type Signer = string | undefined
+
+export type DispatchMetadata = {
+    encrypted: boolean
+    timestamp: string | undefined
+    fromStore: boolean
+    contentTopic: string
+    ephemeral: boolean | undefined
 }
 
 type MessageType = string
-type DispatchCallback = (payload: any, msg:IMessage, signer?: string) => void
+type DispatchCallback = (payload: any, signer: Signer, meta: DispatchMetadata) => void
 
 export class Dispatcher {
     mapping: Map<MessageType, DispachInfo[]>
     node: LightNode
     decoder: IDecoder<IDecodedMessage> 
     encoder: IEncoder
+    encoderEphemeral: IEncoder
+    ephemeralDefault: boolean
     unsubscribe: () => void 
     running: boolean
     decryptionKeys: Uint8Array[]
     constructor(node: LightNode, encoder: IEncoder, decoder: IDecoder<IDecodedMessage> ) {
         this.mapping = new Map<MessageType, DispachInfo[]>()
         this.node = node
-        this.encoder = encoder
+
+        if (encoder.ephemeral) {
+            this.encoderEphemeral = encoder
+            this.encoder = createEncoder({contentTopic: encoder.contentTopic, ephemeral: false})
+        } else {
+            this.encoder = encoder
+            this.encoderEphemeral = createEncoder({contentTopic: encoder.contentTopic, ephemeral: true})
+        }
+        
+        this.ephemeralDefault = encoder.ephemeral
         this.decoder = decoder
         this.unsubscribe = () => {}
         this.running = false
@@ -54,12 +77,12 @@ export class Dispatcher {
     }
 
 
-    on = (typ: MessageType, callback: DispatchCallback, verifySender?: boolean ) => {
+    on = (typ: MessageType, callback: DispatchCallback, verifySender?: boolean, acceptOnlyEcrypted?: boolean ) => {
         if (!this.mapping.has(typ)){
             this.mapping.set(typ, [])
         }
         const dispatchInfos = this.mapping.get(typ)
-        dispatchInfos?.push({callback: callback, verifySender: !!verifySender})
+        dispatchInfos?.push({callback: callback, verifySender: !!verifySender, acceptOnlyEncrypted: !!acceptOnlyEcrypted})
         this.mapping.set(typ, dispatchInfos!)
     }
 
@@ -85,13 +108,15 @@ export class Dispatcher {
         if (!this.decryptionKeys.find((k) => k == key)) this.decryptionKeys.push(key)
     }
 
-    dispatch:Callback<IDecodedMessage> = async (msg: IDecodedMessage) => {
+    dispatch = async (msg: IDecodedMessage, fromStorage: boolean = false) => {
         let msgPayload = msg.payload
+        let encrypted = false
         if (this.decryptionKeys.length > 0) {
             for (const key of this.decryptionKeys) {
                 try {
                     const buffer = await decrypt(key, msgPayload)
                     msgPayload = new Uint8Array(buffer.buffer)
+                    encrypted = true
                     break
                 } catch (e) {
                     //console.log(e)
@@ -99,43 +124,52 @@ export class Dispatcher {
                 //console.log(msgPayload)
             }
         }
-        const dmsg:IDispatchMessage = JSON.parse(bytesToUtf8(msgPayload), reviver) 
-        if (!dmsg.timestamp)
-            dmsg.timestamp = msg.timestamp?.toString()
 
-        if (!this.mapping.has(dmsg.type)) {
-            console.error("Unknown type " + dmsg.type)
-            return
-        }
+        try {
+            const dmsg:IDispatchMessage = JSON.parse(bytesToUtf8(msgPayload), reviver) 
+            if (!dmsg.timestamp)
+                dmsg.timestamp = msg.timestamp?.toString()
 
-        const dispatchInfos = this.mapping.get(dmsg.type)
-
-        if (!dispatchInfos) {
-            console.error("Undefined callback for " + dmsg.type)
-            return
-        }
-
-        for (const dispatchInfo of dispatchInfos) {
-            let payload = dmsg.payload
-
-            if (dispatchInfo.verifySender) {
-                if (!dmsg.signature) {
-                    console.error(`${dmsg.type}: Message requires verification, but signature is empty!`)
-                    continue
-                }
-                const dmsgToVerify: IDispatchMessage = {type: dmsg.type, payload: dmsg.payload, timestamp: dmsg.timestamp, signature: undefined, signer: dmsg.signer, }
-                const signer = ethers.verifyMessage(JSON.stringify(dmsgToVerify), dmsg.signature)
-                if (signer != dmsg.signer) {
-                    console.error(`${dmsg.type}: Invalid signer ${dmsg.signer} != ${signer}`)
-                    continue
-                }
+            if (!this.mapping.has(dmsg.type)) {
+                console.error("Unknown type " + dmsg.type)
+                return
             }
 
-            dispatchInfo.callback(payload, msg, dmsg.signer)
+            const dispatchInfos = this.mapping.get(dmsg.type)
+
+            if (!dispatchInfos) {
+                console.error("Undefined callback for " + dmsg.type)
+                return
+            }
+
+            for (const dispatchInfo of dispatchInfos) {
+                if (dispatchInfo.acceptOnlyEncrypted && !encrypted) {
+                    console.log(`Message not encrypted, skipping (type: ${dmsg.type})`)
+                }
+
+                let payload = dmsg.payload
+
+                if (dispatchInfo.verifySender) {
+                    if (!dmsg.signature) {
+                        console.error(`${dmsg.type}: Message requires verification, but signature is empty!`)
+                        continue
+                    }
+                    const dmsgToVerify: IDispatchMessage = {type: dmsg.type, payload: dmsg.payload, timestamp: dmsg.timestamp, signature: undefined, signer: dmsg.signer, }
+                    const signer = ethers.verifyMessage(JSON.stringify(dmsgToVerify), dmsg.signature)
+                    if (signer != dmsg.signer) {
+                        console.error(`${dmsg.type}: Invalid signer ${dmsg.signer} != ${signer}`)
+                        continue
+                    }
+                }
+
+                dispatchInfo.callback(payload, dmsg.signer, {encrypted: encrypted, fromStore: fromStorage, timestamp: dmsg.timestamp, ephemeral: msg.ephemeral, contentTopic: msg.contentTopic})
+            }
+        } catch (e) {
+            //console.error(e)
         }
     }
 
-    emit = async (typ: MessageType, payload: any, wallet?: BaseWallet, encryptionPublicKey?: Uint8Array) => {
+    emit = async (typ: MessageType, payload: any, wallet?: BaseWallet, encryptionPublicKey?: Uint8Array, ephemeral: boolean = this.ephemeralDefault) => {
         const dmsg: IDispatchMessage = {
             type: typ,
             payload: payload,
@@ -159,15 +193,33 @@ export class Dispatcher {
         const msg: IMessage = {
             payload: payloadArray
         }
-        const res = await this.node.lightPush.send(this.encoder, msg)
+
+        const encoder = ephemeral ? this.encoderEphemeral : this.encoder 
+        const res = await this.node.lightPush.send(encoder, msg)
         if (res && res.errors && res.errors.length > 0) {
             console.log(res.errors)
             await waitForRemotePeer(this.node, [Protocols.LightPush, Protocols.Filter])
-            const res2 = await this.node.lightPush.send(this.encoder, msg)
+            const res2 = await this.node.lightPush.send(encoder, msg)
             return res2
         }
 
         return res
+    }
+
+    dispatchQuery = async (options: StoreQueryOptions) => {
+        for await (const messagesPromises of this.node.store.queryGenerator(
+            [this.decoder],
+            options
+          )) {
+              await Promise.all(
+                  messagesPromises
+                      .map(async (p) => {
+                          const msg = await p;
+                          if (msg)
+                            await this.dispatch(msg, true)
+                      })
+                  );
+          }
     }
 }
 
