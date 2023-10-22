@@ -27,14 +27,14 @@ export const DispatcherProvider: React.FunctionComponent<ProviderProps> = (props
 
     useEffect(() => {
         if (!node || !encoder || !decoder) return
+        let d: Dispatcher
         (async () => {
-            const d = new Dispatcher(node, encoder, decoder)
+            d = new Dispatcher(node, encoder, decoder)
             await d.start()
             setDispatcher(d)
         })()
         return () => {
-            if (dispatcher)
-                dispatcher.stop()
+            d.stop()
         }
     }, [node, encoder, decoder])
 

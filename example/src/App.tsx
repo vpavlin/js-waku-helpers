@@ -9,7 +9,7 @@ import Pair from './components/shareWithDevice/pair';
 
 function App() {
   return (
-    <div className="App">
+    <div className="App text-center">
       <LightNodeProvider options={{defaultBootstrap: true, pingKeepAlive: 10}} protocols={[Protocols.LightPush, Protocols.Filter, Protocols.Store]}>
         <ContentPairProvider contentTopic={CONTENT_TOPIC_PAIRING} ephemeral={true}>
           <DispatcherProvider>

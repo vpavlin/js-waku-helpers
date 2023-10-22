@@ -7,6 +7,7 @@ import { Confirm, Paired, PairedAccount, PairedAccounts, Send, Verify } from "./
 import { QrScanner } from "@yudiel/react-qr-scanner";
 import { DispatchMetadata, Signer } from "../../lib/dispatcher";
 import logo  from "../../../public/logo192.png"
+import { PageDirection } from "@waku/interfaces";
 
 type RecievedData = {
     value: string
@@ -86,16 +87,14 @@ const Pair = () => {
                         values.push({value: payload.value, timestamp: meta.timestamp || new Date().toString()})
                         x.set(signer, values)
 
-                        if (false && !meta.fromStore) {
+                        if (Notification && !meta.fromStore) {
                             const options: NotificationOptions = {
                                 timestamp: parseInt(meta.timestamp || new Date().toString()),
                                 body: payload.value,
                                 dir: 'ltr',
                             };
                             const notification = new Notification('Notification', options);
-                            notification.onclick = () => {
-                                window.open(window.location.href)
-                            }
+                            notification.onclick = function(x) { window.focus();};
                         }
                         return new Map<string, RecievedData[]>(x)
                     }
@@ -126,7 +125,7 @@ const Pair = () => {
                 setVerifySent(false)
             }
         }, true)
-        dispatcher.dispatchQuery({})
+        dispatcher.dispatchQuery({pageDirection: PageDirection.BACKWARD})
 
         return () => {
             setReceived(new Map<string, RecievedData[]>())
@@ -148,17 +147,18 @@ const Pair = () => {
                 }
                 return new Map<string, PairedAccount>(x)
             })
+        } else {
+            localStorage.setItem("pairedAccounts", JSON.stringify([...pairedAccounts.values()]))
         }
-
-        localStorage.setItem("pairedAccounts", JSON.stringify([...pairedAccounts.values()]))
     }, [pairedAccounts])
 
     useEffect(() => {
         if (!deviceName) {
             const deviceNameItem = localStorage.getItem("deviceName")
             if (deviceNameItem) setDeviceName(deviceNameItem)
+        } else {
+            localStorage.setItem("deviceName", deviceName || "")
         }
-        localStorage.setItem("deviceName", deviceName || "")
 
     }, [deviceName])
 
@@ -194,13 +194,13 @@ const Pair = () => {
     }
 
     return (<>
-    {dispatcher && publicKey &&
-        <div>
-            <div><input type="text" onChange={(e) => setDeviceName(e.target.value)} value={deviceName} placeholder="Device Name" /></div>
-            <button onClick={() => setPairWith(true)}>Pair With</button>
+    {dispatcher && publicKey ?
+        <div className="text-center m-auto w-full max-w-2xl">
+            <div className="my-2"><input className="input input-bordered" type="text" onChange={(e) => setDeviceName(e.target.value)} value={deviceName} placeholder="Device Name" /></div>
+            <button className="btn btn-lg m-1" onClick={() => setPairWith(!pairWith)}>{ pairWith ? "Cancel" : "Pair With"}</button>
             { pairWith &&
-            <div style={{width: "300px", margin: "10px auto"}}>
-                <button onClick={() => setScanner(true)}>Scan</button>
+            <div className="m-2 p-2 border border-base-content rounded-lg">
+                <button className="btn btn-lg" onClick={() => setScanner(true)}>Scan</button>
                 {scanner && <QrScanner
                             onDecode={(result:string) => {setPairingAccount("", result, "")}}
                             onError={(error:any) => console.error(error?.message)}
@@ -214,39 +214,49 @@ const Pair = () => {
 
             </div>
             }
-            <button onClick={() => setPairMe(true)}>Pair Me</button>
+            <button className="btn btn-lg m-1" onClick={() => setPairMe(!pairMe)}>{pairMe ? "Cancel" : "Pair Me"}</button>
             { pairMe &&
-                <div>
+                <div className="m-2 p-2 border border-base-content rounded-lg items-center justify-center  align-middle text-center">
                     <div>Sync Key</div>
-                    <QRCode value={utils.bytesToHex(publicKey!)} />
+                    <div><QRCode className="m-auto" value={utils.bytesToHex(publicKey!)} /></div>
                     {
                         syncCode && pairingAccount?.publicKey &&
                         <div>
                             <div>Sync Code: {syncCode}</div>
-                            <button disabled={!deviceName} onClick={() => dispatcher.emit("confirm", {address: wallet?.address, code: syncCode, name: deviceName} as Confirm, wallet, utils.hexToBytes(pairingAccount.publicKey))}>Confirm</button>
+                            <button className="btn btn-lg" disabled={!deviceName} onClick={() => dispatcher.emit("confirm", {address: wallet?.address, code: syncCode, name: deviceName} as Confirm, wallet, utils.hexToBytes(pairingAccount.publicKey))}>Confirm</button>
                         </div>
                     }
                 </div>
             }
             {
-                    pairedAccounts.size > 0 &&
-                    <div>
-                        <textarea onChange={(e) => setToSend(e.target.value)} />
-                        <button disabled={!dispatcher || !toSend} onClick={() => send()}>Send</button>
-                        {
-                            [...pairedAccounts.values()].map((p) => 
+                pairedAccounts.size > 0 &&
+                <div>
+                    <div><textarea className="textarea textarea-bordered min-h-[100px] min-w-[300px]" onChange={(e) => setToSend(e.target.value)} /></div>
+                    <div><button className="btn btn-lg" disabled={!dispatcher || !toSend} onClick={() => send()}>Send</button></div>
+                    {
+                        [...pairedAccounts.values()].map((p) => 
+                        <div>
+                            <div className="items-center flex"><label className="label cursor-pointer"><input className="checkbox m-2" type="checkbox" onChange={(e) => setReceivers((x) => e.target.checked ? [...x, p.address] : [...x.filter((r) => r != p.address)])}/><strong>{p.name || p.address}</strong></label></div>
                             <div>
-                                <div><input type="checkbox" onChange={(e) => setReceivers((x) => e.target.checked ? [...x, p.address] : [...x.filter((r) => r != p.address)])}/><strong>{p.name || p.address}</strong></div>
-                                <div>{received.get(p.address)?.map((v) => <div>{v.value.startsWith("http") ? <a href={v.value} target="_blank">{v.value}</a> : v.value} ({new Date(parseInt(v.timestamp)).toLocaleString()})</div>)}</div>
-                            </div>
-                            )
-                        }
-                    </div>
-                    
-                }
-        <div style={{margin: "2em auto"}}><img src="/logo192.png" /></div>
+                                <table className="table table-zebra">
+                                    <tbody>
+                                    {
+                                        received.get(p.address)?.map((v) => <tr><td>{v.value.startsWith("http") ? <a  className="link link-accent" href={v.value} target="_blank">{v.value}</a> : v.value}</td><td className="text-right">{new Date(parseInt(v.timestamp)).toLocaleString()})</td></tr>)
+                                    }
+                                    </tbody>
+                                </table>
+                                </div>
+                        </div>
+                        )
+                    }
+                </div>
+                
+            }
         </div>
+        :
+        <div className="text-center">Loading...</div>
     }
+    <div className="m-auto w-fit mt-10"><img src="/logo192.png" /></div>
     </>)
 }
 
