@@ -11,7 +11,7 @@ import { PageDirection } from "@waku/interfaces";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { ToastContainer, toast } from "react-toastify";
 import 'react-toastify/dist/ReactToastify.css';
-
+import Linkify from "react-linkify"
 
 type RecievedData = {
     value: string
@@ -53,6 +53,9 @@ const Pair = () => {
     const [toSend, setToSend] = useState<string>()
     const [receivers, setReceivers] = useState<string[]>([])
     const [sending, setSending] = useState(false)
+
+    const [openList, setOpenList] = useState<string | undefined>(defaultTarget)
+
 
     useEffect(() => {
         if (!dispatcher || !privateKey) return
@@ -179,6 +182,7 @@ const Pair = () => {
 
         } else {
             setReceivers((x) => x.indexOf(defaultTarget) < 0 ? [...x, defaultTarget]: x)
+            setOpenList(defaultTarget)
             localStorage.setItem("defaultTarget", defaultTarget || "")
         }
 
@@ -204,7 +208,7 @@ const Pair = () => {
           }
     }, [])
 
-    useEffect(() => {console.log(receivers)}, [receivers])
+    useEffect(() => {console.log(openList)}, [openList])
 
     const send = async () => {
         if (!dispatcher || !toSend || receivers.length == 0) return
@@ -228,7 +232,7 @@ const Pair = () => {
 
     return (<>
     {dispatcher && publicKey ?
-        <div className="text-center m-auto w-full max-w-2xl">
+        <div className="text-center m-auto w-full max-w-xl">
             <div className="my-2"><input className="input input-bordered" type="text" onChange={(e) => setDeviceName(e.target.value)} value={deviceName} placeholder="Device Name" /></div>
             <button className="btn btn-lg m-1" onClick={() => setPairWith(!pairWith)}>{ pairWith ? "Cancel" : "Pair With"}</button>
             { pairWith &&
@@ -264,30 +268,43 @@ const Pair = () => {
             {
                 pairedAccounts.size > 0 &&
                 <div>
-                    <div><textarea className="textarea textarea-bordered min-h-[100px] min-w-[300px]" onChange={(e) => setToSend(e.target.value)} value={toSend}/></div>
+                    <div><textarea className="textarea textarea-bordered min-h-[100px] min-w-[300px] w-full" onChange={(e) => setToSend(e.target.value)} value={toSend}/></div>
                     <div><button className="btn btn-lg" disabled={!dispatcher || !toSend || receivers.length == 0 || sending} onClick={() => send()}>{ sending ? "Sending..." : "Send"}</button></div>
+                    <div>
                     {
                         [...pairedAccounts.values()].map((p) => 
-                        <div>
-                            <div className="items-center flex">
-                                <label className="label cursor-pointer space-x-2">
-                                    <input className="checkbox m-2" type="checkbox" checked={receivers.indexOf(p.address) >= 0} onChange={(e) => setReceivers((x) => e.target.checked ? [...x, p.address] : [...x.filter((r) => r != p.address)])}/>
+                        <div key={p.address} className="bg-base-200 rounded-lg m-2">
+                            <div className="items-center flex justify-between">
+                                <label className="label cursor-pointer hover:bg-base-100 rounded-md w-fit m-2 justify-start">
+                                    <input className="checkbox m-2" type="checkbox" checked={receivers.indexOf(p.address) >= 0} onChange={(e) => {setReceivers((x) => e.target.checked ? [...x, p.address] : [...x.filter((r) => r != p.address)]); e.target.checked && setOpenList((x) => x == p.address ? undefined : p.address)}} />
                                     <strong>{p.name || p.address}</strong>
-                                    { p.address != defaultTarget ? <button className="btn btn-sm" onClick={() => setDefaultTarget(p.address)}>Default</button> : <div className="badge badge-primary">Default</div>}
                                 </label>
+                                <span className="min-w-fit">
+                                    { p.address != defaultTarget ? <button className="btn btn-sm" onClick={() => setDefaultTarget(p.address)}>Default</button> : <div className="badge badge-primary mx-2">Default</div>}
+                                    <span className="mx-2">
+                                        <label className="cursor-pointer p-2 text-lg font-bold" htmlFor={`display-${p.address}`}>
+                                            { openList == p.address ? "-" : "+"}
+                                        </label>
+                                    </span>
+                                </span>
                             </div>
-                            <div>
-                                <table className="table table-zebra">
-                                    <tbody>
-                                    {
-                                        received.get(p.address)?.map((v) => <tr><td>{v.value.startsWith("http") ? <a  className="link link-accent" href={v.value} target="_blank">{v.value}</a> : v.value}</td><td className="text-right">{new Date(parseInt(v.timestamp)).toLocaleString()})</td></tr>)
-                                    }
-                                    </tbody>
-                                </table>
+                            <div className="">
+                                <input type="checkbox" className="hidden" name={`display-${p.address}`} checked={openList == p.address} id={`display-${p.address}`} onChange={() => setOpenList((x) => x == p.address ? undefined : p.address)} />
+                                <div className={`${openList === p.address ? "block" : "hidden"} `}>
+                                    <table className="table table-zebra">
+                                        <thead><tr><th>Message</th><th>Time</th></tr></thead>
+                                        <tbody>
+                                        {
+                                            received.get(p.address)?.map((v) => <tr className=""><td className="overflow-auto max-w-md"><Linkify>{v.value}</Linkify></td><td className="text-right">{new Date(parseInt(v.timestamp)).toLocaleString()})</td></tr>)
+                                        }
+                                        </tbody>
+                                    </table>
                                 </div>
+                            </div>
                         </div>
                         )
                     }
+                    </div>
                 </div>
                 
             }
