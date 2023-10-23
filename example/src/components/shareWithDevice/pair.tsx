@@ -29,6 +29,7 @@ const Pair = () => {
     const [verifySent, setVerifySent] = useState(false)
 
     const [pairedAccounts, setPairedAccounts] = useState<PairedAccounts>(new Map<string, PairedAccount>)
+    const [defaultTarget, setDefaultTarget] = useState<string>()
 
     const [deviceName, setDeviceName] = useState<string>()
     const [syncCode, _setSyncCode] = useState<string>()
@@ -168,6 +169,22 @@ const Pair = () => {
 
     }, [deviceName])
 
+    useEffect(() => {
+        if (!defaultTarget) {
+            const defaultTargetItem = localStorage.getItem("defaultTarget")
+            if (defaultTargetItem) {
+                setDefaultTarget(defaultTargetItem)
+                console.log(defaultTargetItem)
+            }
+
+        } else {
+            setReceivers((x) => x.indexOf(defaultTarget) < 0 ? [...x, defaultTarget]: x)
+            localStorage.setItem("defaultTarget", defaultTarget || "")
+        }
+
+
+    }, [defaultTarget])
+
 
     useEffect(() => {
         if (!pairingAccount || !publicKey || verifySent) return
@@ -187,7 +204,7 @@ const Pair = () => {
           }
     }, [])
 
-    useEffect(() => {console.log([...pairedAccounts.values()])}, [pairedAccounts])
+    useEffect(() => {console.log(receivers)}, [receivers])
 
     const send = async () => {
         if (!dispatcher || !toSend || receivers.length == 0) return
@@ -252,7 +269,13 @@ const Pair = () => {
                     {
                         [...pairedAccounts.values()].map((p) => 
                         <div>
-                            <div className="items-center flex"><label className="label cursor-pointer"><input className="checkbox m-2" type="checkbox" onChange={(e) => setReceivers((x) => e.target.checked ? [...x, p.address] : [...x.filter((r) => r != p.address)])}/><strong>{p.name || p.address}</strong></label></div>
+                            <div className="items-center flex">
+                                <label className="label cursor-pointer space-x-2">
+                                    <input className="checkbox m-2" type="checkbox" checked={receivers.indexOf(p.address) >= 0} onChange={(e) => setReceivers((x) => e.target.checked ? [...x, p.address] : [...x.filter((r) => r != p.address)])}/>
+                                    <strong>{p.name || p.address}</strong>
+                                    { p.address != defaultTarget ? <button className="btn btn-sm" onClick={() => setDefaultTarget(p.address)}>Default</button> : <div className="badge badge-primary">Default</div>}
+                                </label>
+                            </div>
                             <div>
                                 <table className="table table-zebra">
                                     <tbody>
