@@ -82,7 +82,12 @@ export class Dispatcher {
             this.mapping.set(typ, [])
         }
         const dispatchInfos = this.mapping.get(typ)
-        dispatchInfos?.push({callback: callback, verifySender: !!verifySender, acceptOnlyEncrypted: !!acceptOnlyEcrypted})
+        const newDispatchInfo = {callback: callback, verifySender: !!verifySender, acceptOnlyEncrypted: !!acceptOnlyEcrypted}
+        if (dispatchInfos?.find((di) => di.callback == newDispatchInfo.callback)) {
+            console.log("Skipping the callback setup - already exists")
+            return
+        }
+        dispatchInfos?.push(newDispatchInfo)
         this.mapping.set(typ, dispatchInfos!)
     }
 

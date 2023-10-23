@@ -8,6 +8,7 @@ import { QrScanner } from "@yudiel/react-qr-scanner";
 import { DispatchMetadata, Signer } from "../../lib/dispatcher";
 import logo  from "../../../public/logo192.png"
 import { PageDirection } from "@waku/interfaces";
+import { useIsMobile } from "../../hooks/useIsMobile";
 
 type RecievedData = {
     value: string
@@ -17,6 +18,7 @@ type RecievedData = {
 const Pair = () => {
     const {dispatcher} = useDispatcher()
     const {wallet, publicKey, privateKey} =useIdentity("shareWithDevice", "xyz")
+    const isMobile  = useIsMobile()
 
     const [scanner, setScanner] = useState(false)
     const [pairMe, setPairMe] = useState(false)
@@ -82,12 +84,12 @@ const Pair = () => {
                     if (!x.has(signer))
                         x?.set(signer, [])
 
-                    const values = x.get(signer)
+                    let values = x.get(signer)
                     if (values) {
-                        values.push({value: payload.value, timestamp: meta.timestamp || new Date().toString()})
+                        values = [{value: payload.value, timestamp: meta.timestamp || new Date().toString()}, ...values]
                         x.set(signer, values)
 
-                        if (Notification && !meta.fromStore) {
+                        if (!isMobile && Notification && !meta.fromStore) {
                             const options: NotificationOptions = {
                                 timestamp: parseInt(meta.timestamp || new Date().toString()),
                                 body: payload.value,
@@ -125,7 +127,7 @@ const Pair = () => {
                 setVerifySent(false)
             }
         }, true)
-        dispatcher.dispatchQuery({pageDirection: PageDirection.BACKWARD})
+        dispatcher.dispatchQuery({pageDirection: PageDirection.FORWARD})
 
         return () => {
             setReceived(new Map<string, RecievedData[]>())
@@ -218,7 +220,7 @@ const Pair = () => {
             { pairMe &&
                 <div className="m-2 p-2 border border-base-content rounded-lg items-center justify-center  align-middle text-center">
                     <div>Sync Key</div>
-                    <div><QRCode className="m-auto" value={utils.bytesToHex(publicKey!)} /></div>
+                    <div><QRCode className="m-auto border-white border-4 rounded-lg" value={utils.bytesToHex(publicKey!)} /></div>
                     {
                         syncCode && pairingAccount?.publicKey &&
                         <div>
