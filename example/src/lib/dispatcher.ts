@@ -201,12 +201,6 @@ export class Dispatcher {
 
         const encoder = ephemeral ? this.encoderEphemeral : this.encoder 
         const res = await this.node.lightPush.send(encoder, msg)
-        if (res && res.errors && res.errors.length > 0) {
-            console.log(res.errors)
-            await waitForRemotePeer(this.node, [Protocols.LightPush, Protocols.Filter])
-            const res2 = await this.node.lightPush.send(encoder, msg)
-            return res2
-        }
 
         return res
     }

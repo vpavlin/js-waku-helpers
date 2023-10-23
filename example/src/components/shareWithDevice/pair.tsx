@@ -9,6 +9,9 @@ import { DispatchMetadata, Signer } from "../../lib/dispatcher";
 import logo  from "../../../public/logo192.png"
 import { PageDirection } from "@waku/interfaces";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { ToastContainer, toast } from "react-toastify";
+import 'react-toastify/dist/ReactToastify.css';
+
 
 type RecievedData = {
     value: string
@@ -48,6 +51,7 @@ const Pair = () => {
     const [received, setReceived] = useState<Map<string, RecievedData[]>>(new Map<string, RecievedData[]>())
     const [toSend, setToSend] = useState<string>()
     const [receivers, setReceivers] = useState<string[]>([])
+    const [sending, setSending] = useState(false)
 
     useEffect(() => {
         if (!dispatcher || !privateKey) return
@@ -185,13 +189,23 @@ const Pair = () => {
 
     useEffect(() => {console.log([...pairedAccounts.values()])}, [pairedAccounts])
 
-    const send = () => {
+    const send = async () => {
         if (!dispatcher || !toSend || receivers.length == 0) return
 
         for (const r of receivers) {
             const p = pairedAccounts.get(r)
-            if (p)
-                dispatcher.emit("send", {value: toSend} as Send, wallet, utils.hexToBytes(p.publicKey), false)
+            if (p) {
+                setSending(true)
+                const res = await dispatcher.emit("send", {value: toSend} as Send, wallet, utils.hexToBytes(p.publicKey), false)
+                console.log(res)
+                if (res.errors && res.errors.length > 0) {
+                    toast.error(`Failed to send message: ${res.errors.join(". ")}`)
+                } else {
+                    toast("Successfully pushed the message!")
+                    setToSend("")
+                }
+                setSending(false)
+            }
         }
     }
 
@@ -233,8 +247,8 @@ const Pair = () => {
             {
                 pairedAccounts.size > 0 &&
                 <div>
-                    <div><textarea className="textarea textarea-bordered min-h-[100px] min-w-[300px]" onChange={(e) => setToSend(e.target.value)} /></div>
-                    <div><button className="btn btn-lg" disabled={!dispatcher || !toSend} onClick={() => send()}>Send</button></div>
+                    <div><textarea className="textarea textarea-bordered min-h-[100px] min-w-[300px]" onChange={(e) => setToSend(e.target.value)} value={toSend}/></div>
+                    <div><button className="btn btn-lg" disabled={!dispatcher || !toSend || receivers.length == 0 || sending} onClick={() => send()}>{ sending ? "Sending..." : "Send"}</button></div>
                     {
                         [...pairedAccounts.values()].map((p) => 
                         <div>
@@ -259,6 +273,16 @@ const Pair = () => {
         <div className="text-center">Loading...</div>
     }
     <div className="m-auto w-fit mt-10"><img src="/logo192.png" /></div>
+    <ToastContainer 
+        position="top-right"
+        autoClose={2000}
+        hideProgressBar
+        newestOnTop={true}
+        closeOnClick
+        pauseOnFocusLoss
+        pauseOnHover
+        theme="dark"
+    />
     </>)
 }
 
