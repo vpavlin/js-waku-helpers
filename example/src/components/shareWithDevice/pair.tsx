@@ -6,8 +6,6 @@ import { useEffect, useRef, useState } from "react";
 import { Confirm, Paired, PairedAccount, PairedAccounts, Send, Verify } from "./types";
 import { QrScanner } from "@yudiel/react-qr-scanner";
 import { DispatchMetadata, Signer } from "../../lib/dispatcher";
-import logo  from "../../../public/logo192.png"
-import { PageDirection } from "@waku/interfaces";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { ToastContainer, toast } from "react-toastify";
 import 'react-toastify/dist/ReactToastify.css';
@@ -19,8 +17,8 @@ type RecievedData = {
 }
 
 const Pair = () => {
-    const {dispatcher} = useDispatcher()
-    const {wallet, publicKey, privateKey} =useIdentity("shareWithDevice", "xyz")
+    const {connected, dispatcher, peerCount, peers} = useDispatcher()
+    const {wallet, publicKey, privateKey} = useIdentity("shareWithDevice", "xyz")
     const isMobile  = useIsMobile()
 
     const [scanner, setScanner] = useState(false)
@@ -102,6 +100,8 @@ const Pair = () => {
                                 timestamp: parseInt(meta.timestamp || new Date().toString()),
                                 body: payload.value,
                                 dir: 'ltr',
+                                icon: '/logo192.png',
+                                requireInteraction: true,
                             };
                             const notification = new Notification('Notification', options);
                             notification.onclick = function(x) { window.focus();};
@@ -116,14 +116,11 @@ const Pair = () => {
         dispatcher.on("confirm", (payload: Confirm, signer: Signer, meta: DispatchMetadata) => {
             console.log(syncCodeRef.current)
             if (signer == payload.address && payload.code == syncCodeRef.current && pairingAccountRef.current) {
-                console.log("here")
                 setPairedAccounts((x) => {
-                    console.log(x)
                     if(x.has(payload.address)) return x
 
                     x.set(payload.address, {name: payload.name, address: payload.address, publicKey: pairingAccountRef.current?.publicKey!})
                     setPairingAccount("", "", "")
-                    console.log(x)
                     return new Map<string, PairedAccount>(x)
                 })
                 
@@ -135,7 +132,7 @@ const Pair = () => {
                 setVerifySent(false)
             }
         }, true)
-        dispatcher.dispatchQuery({pageDirection: PageDirection.FORWARD})
+        dispatcher.dispatchQuery()
 
         return () => {
             setReceived(new Map<string, RecievedData[]>())
@@ -163,7 +160,7 @@ const Pair = () => {
     }, [pairedAccounts])
 
     useEffect(() => {
-        if (!deviceName) {
+        if (deviceName === undefined) {
             const deviceNameItem = localStorage.getItem("deviceName")
             if (deviceNameItem) setDeviceName(deviceNameItem)
         } else {
@@ -231,6 +228,9 @@ const Pair = () => {
     }
 
     return (<>
+    <div className={`lg:fixed top right-0 m-5 p-3 items-center justify-center badge ${connected ? "badge-success" : "badge-error"}`}>
+        <div className="">Waku { peerCount > 0 && <span className="badge badge-neutral inline-block ml-2 align-top tooltip tooltip-bottom" data-tip={peers && peers.join("\n")}>{peerCount}</span>}</div>
+    </div>
     {dispatcher && publicKey ?
         <div className="text-center m-auto w-full max-w-xl">
             <div className="my-2"><input className="input input-bordered" type="text" onChange={(e) => setDeviceName(e.target.value)} value={deviceName} placeholder="Device Name" /></div>
@@ -290,12 +290,12 @@ const Pair = () => {
                             </div>
                             <div className="">
                                 <input type="checkbox" className="hidden" name={`display-${p.address}`} checked={openList == p.address} id={`display-${p.address}`} onChange={() => setOpenList((x) => x == p.address ? undefined : p.address)} />
-                                <div className={`${openList === p.address ? "block" : "hidden"} `}>
+                                <div className={`${openList === p.address ? "block" : "hidden"} overflow-y-scroll overflow-x-hidden max-h-[400px]`}>
                                     <table className="table table-zebra">
                                         <thead><tr><th>Message</th><th>Time</th></tr></thead>
-                                        <tbody>
+                                        <tbody className="">
                                         {
-                                            received.get(p.address)?.map((v) => <tr className=""><td className="overflow-auto max-w-md"><Linkify>{v.value}</Linkify></td><td className="text-right">{new Date(parseInt(v.timestamp)).toLocaleString()})</td></tr>)
+                                            received.get(p.address)?.map((v, i) => <tr key={i + v.timestamp} className=""><td className="overflow-auto max-w-md"><Linkify>{v.value}</Linkify></td><td className="text-right">{new Date(parseInt(v.timestamp)).toLocaleString()})</td></tr>)
                                         }
                                         </tbody>
                                     </table>

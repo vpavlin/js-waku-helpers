@@ -1,4 +1,4 @@
-import { LightNode, IDecodedMessage, Waku, StoreQueryOptions } from "@waku/interfaces"
+import { LightNode, IDecodedMessage, Waku, StoreQueryOptions, IFilterSubscription, PageDirection } from "@waku/interfaces"
 import {
     bytesToUtf8,
     createEncoder,
@@ -50,39 +50,42 @@ type DispatchCallback = (payload: any, signer: Signer, meta: DispatchMetadata) =
 export class Dispatcher {
     mapping: Map<MessageType, DispachInfo[]>
     node: LightNode
-    decoder: IDecoder<IDecodedMessage> 
+    decoder: IDecoder<IDecodedMessage>
     encoder: IEncoder
     encoderEphemeral: IEncoder
     ephemeralDefault: boolean
-    unsubscribe: () => void 
+    subscription: IFilterSubscription | undefined
     running: boolean
     decryptionKeys: Uint8Array[]
-    constructor(node: LightNode, encoder: IEncoder, decoder: IDecoder<IDecodedMessage> ) {
+    hearbeatInterval: NodeJS.Timer | undefined
+    constructor(node: LightNode, encoder: IEncoder, decoder: IDecoder<IDecodedMessage>) {
         this.mapping = new Map<MessageType, DispachInfo[]>()
         this.node = node
 
         if (encoder.ephemeral) {
             this.encoderEphemeral = encoder
-            this.encoder = createEncoder({contentTopic: encoder.contentTopic, ephemeral: false})
+            this.encoder = createEncoder({ contentTopic: encoder.contentTopic, ephemeral: false })
         } else {
             this.encoder = encoder
-            this.encoderEphemeral = createEncoder({contentTopic: encoder.contentTopic, ephemeral: true})
+            this.encoderEphemeral = createEncoder({ contentTopic: encoder.contentTopic, ephemeral: true })
         }
-        
+
         this.ephemeralDefault = encoder.ephemeral
         this.decoder = decoder
-        this.unsubscribe = () => {}
         this.running = false
         this.decryptionKeys = []
+
+        this.subscription = undefined
+        this.hearbeatInterval = undefined
     }
 
 
-    on = (typ: MessageType, callback: DispatchCallback, verifySender?: boolean, acceptOnlyEcrypted?: boolean ) => {
-        if (!this.mapping.has(typ)){
+    on = (typ: MessageType, callback: DispatchCallback, verifySender?: boolean, acceptOnlyEcrypted?: boolean) => {
+        if (!this.mapping.has(typ)) {
             this.mapping.set(typ, [])
         }
         const dispatchInfos = this.mapping.get(typ)
-        const newDispatchInfo = {callback: callback, verifySender: !!verifySender, acceptOnlyEncrypted: !!acceptOnlyEcrypted}
+        const newDispatchInfo = { callback: callback, verifySender: !!verifySender, acceptOnlyEncrypted: !!acceptOnlyEcrypted }
         if (dispatchInfos?.find((di) => di.callback == newDispatchInfo.callback)) {
             console.log("Skipping the callback setup - already exists")
             return
@@ -96,16 +99,25 @@ export class Dispatcher {
         this.running = true
         //await this.node.start()
         await waitForRemotePeer(this.node, [Protocols.LightPush, Protocols.Filter])
-        this.unsubscribe = await this.node.filter.subscribe(this.decoder, this.dispatch)
+        this.subscription = await this.node.filter.createSubscription()
+        await this.subscription.subscribe(this.decoder, this.dispatch)
+        console.log("Subscribed...")
+        this.node.libp2p.addEventListener("peer:disconnect", async () => {
+            console.log("Peer disconnected, check subscription!")
+            await this.checkSubscription()
+        })
+        this.hearbeatInterval = setInterval(() => this.checkSubscription(), 2000)
     }
 
     stop = () => {
         this.running = false
-        this.unsubscribe()
+        clearInterval(this.hearbeatInterval)
+        this.subscription?.unsubscribeAll()
         this.mapping.clear()
+
     }
 
-    isRunning = ():boolean => {
+    isRunning = (): boolean => {
         return this.running
     }
 
@@ -131,7 +143,7 @@ export class Dispatcher {
         }
 
         try {
-            const dmsg:IDispatchMessage = JSON.parse(bytesToUtf8(msgPayload), reviver) 
+            const dmsg: IDispatchMessage = JSON.parse(bytesToUtf8(msgPayload), reviver)
             if (!dmsg.timestamp)
                 dmsg.timestamp = msg.timestamp?.toString()
 
@@ -159,7 +171,7 @@ export class Dispatcher {
                         console.error(`${dmsg.type}: Message requires verification, but signature is empty!`)
                         continue
                     }
-                    const dmsgToVerify: IDispatchMessage = {type: dmsg.type, payload: dmsg.payload, timestamp: dmsg.timestamp, signature: undefined, signer: dmsg.signer, }
+                    const dmsgToVerify: IDispatchMessage = { type: dmsg.type, payload: dmsg.payload, timestamp: dmsg.timestamp, signature: undefined, signer: dmsg.signer, }
                     const signer = ethers.verifyMessage(JSON.stringify(dmsgToVerify), dmsg.signature)
                     if (signer != dmsg.signer) {
                         console.error(`${dmsg.type}: Invalid signer ${dmsg.signer} != ${signer}`)
@@ -167,7 +179,7 @@ export class Dispatcher {
                     }
                 }
 
-                dispatchInfo.callback(payload, dmsg.signer, {encrypted: encrypted, fromStore: fromStorage, timestamp: dmsg.timestamp, ephemeral: msg.ephemeral, contentTopic: msg.contentTopic})
+                dispatchInfo.callback(payload, dmsg.signer, { encrypted: encrypted, fromStore: fromStorage, timestamp: dmsg.timestamp, ephemeral: msg.ephemeral, contentTopic: msg.contentTopic })
             }
         } catch (e) {
             //console.error(e)
@@ -199,28 +211,48 @@ export class Dispatcher {
             payload: payloadArray
         }
 
-        const encoder = ephemeral ? this.encoderEphemeral : this.encoder 
+        const encoder = ephemeral ? this.encoderEphemeral : this.encoder
         const res = await this.node.lightPush.send(encoder, msg)
 
         return res
     }
 
-    dispatchQuery = async (options: StoreQueryOptions) => {
+    dispatchQuery = async (options: StoreQueryOptions = {pageDirection: PageDirection.FORWARD, pageSize: 20}) => {
         for await (const messagesPromises of this.node.store.queryGenerator(
             [this.decoder],
             options
-          )) {
-              await Promise.all(
-                  messagesPromises
-                      .map(async (p) => {
-                          const msg = await p;
-                          if (msg)
+        )) {
+            await Promise.all(
+                messagesPromises
+                    .map(async (p) => {
+                        const msg = await p;
+                        if (msg)
                             await this.dispatch(msg, true)
-                      })
-                  );
-          }
+                    })
+            );
+        }
+    }
+
+    checkSubscription = async () => {
+        if (this.subscription) {
+            try {
+                await this.subscription.ping();
+            } catch (error) {
+                if (
+                    error instanceof Error &&
+                    error.message.includes("peer has no subscriptions")
+                ) {
+                    console.log("Resubscribing!")
+                    await this.subscription.subscribe([this.decoder], this.dispatch)
+                } else {
+                    throw error;
+                }
+            }
+        }
     }
 }
+
+
 
 function replacer(key: any, value: any) {
     if (value instanceof Map) {
@@ -234,10 +266,10 @@ function replacer(key: any, value: any) {
 }
 
 function reviver(key: any, value: any) {
-    if(typeof value === 'object' && value !== null) {
-      if (value.dataType === 'Map') {
-        return new Map(value.value);
-      }
+    if (typeof value === 'object' && value !== null) {
+        if (value.dataType === 'Map') {
+            return new Map(value.value);
+        }
     }
     return value;
-  }
+}
