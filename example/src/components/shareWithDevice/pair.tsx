@@ -10,6 +10,7 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import { ToastContainer, toast } from "react-toastify";
 import 'react-toastify/dist/ReactToastify.css';
 import Linkify from "react-linkify"
+import getDispatcher from "../../lib"
 
 type RecievedData = {
     value: string

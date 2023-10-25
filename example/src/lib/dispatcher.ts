@@ -1,20 +1,17 @@
 import { LightNode, IDecodedMessage, Waku, StoreQueryOptions, IFilterSubscription, PageDirection } from "@waku/interfaces"
 import {
     bytesToUtf8,
+    createDecoder,
     createEncoder,
     utf8ToBytes,
     waitForRemotePeer,
 } from "@waku/sdk"
-import {
-    hexToBytes
-} from "@waku/utils/bytes"
 
 import {
     IMessage,
     IEncoder,
     IDecoder,
     Protocols,
-    Callback,
 } from "@waku/interfaces"
 import { encrypt, decrypt } from "../../node_modules/@waku/message-encryption/dist/crypto/ecies.js"
 import { BaseWallet, ethers } from "ethers"
@@ -58,20 +55,18 @@ export class Dispatcher {
     running: boolean
     decryptionKeys: Uint8Array[]
     hearbeatInterval: NodeJS.Timer | undefined
-    constructor(node: LightNode, encoder: IEncoder, decoder: IDecoder<IDecodedMessage>) {
+    resubscribing: boolean = false
+    constructor(node: LightNode, contentTopic: string, ephemeral: boolean) {
         this.mapping = new Map<MessageType, DispachInfo[]>()
         this.node = node
 
-        if (encoder.ephemeral) {
-            this.encoderEphemeral = encoder
-            this.encoder = createEncoder({ contentTopic: encoder.contentTopic, ephemeral: false })
-        } else {
-            this.encoder = encoder
-            this.encoderEphemeral = createEncoder({ contentTopic: encoder.contentTopic, ephemeral: true })
-        }
+     
+        this.encoderEphemeral = createEncoder({ contentTopic: contentTopic, ephemeral: true })
+        this.encoder = createEncoder({ contentTopic: contentTopic, ephemeral: false })
 
-        this.ephemeralDefault = encoder.ephemeral
-        this.decoder = decoder
+
+        this.ephemeralDefault = ephemeral
+        this.decoder = createDecoder(contentTopic)
         this.running = false
         this.decryptionKeys = []
 
@@ -102,17 +97,19 @@ export class Dispatcher {
         this.subscription = await this.node.filter.createSubscription()
         await this.subscription.subscribe(this.decoder, this.dispatch)
         console.log("Subscribed...")
-        this.node.libp2p.addEventListener("peer:disconnect", async () => {
+        this.node.libp2p.addEventListener("peer:disconnect", async (e) => {
             console.log("Peer disconnected, check subscription!")
+            console.log(e.detail.toString())
             await this.checkSubscription()
         })
-        this.hearbeatInterval = setInterval(() => this.checkSubscription(), 2000)
+        this.hearbeatInterval = setInterval(() => this.checkSubscription(), 10000)
     }
 
     stop = () => {
         this.running = false
         clearInterval(this.hearbeatInterval)
         this.subscription?.unsubscribeAll()
+        this.subscription = undefined
         this.mapping.clear()
 
     }
@@ -126,6 +123,7 @@ export class Dispatcher {
     }
 
     dispatch = async (msg: IDecodedMessage, fromStorage: boolean = false) => {
+        if (!fromStorage) console.log("delivered")
         let msgPayload = msg.payload
         let encrypted = false
         if (this.decryptionKeys.length > 0) {
@@ -234,7 +232,8 @@ export class Dispatcher {
     }
 
     checkSubscription = async () => {
-        if (this.subscription) {
+        if (this.subscription && !this.resubscribing) {
+            this.resubscribing = true
             try {
                 await this.subscription.ping();
             } catch (error) {
@@ -242,13 +241,30 @@ export class Dispatcher {
                     error instanceof Error &&
                     error.message.includes("peer has no subscriptions")
                 ) {
-                    console.log("Resubscribing!")
-                    await this.subscription.subscribe([this.decoder], this.dispatch)
+                    while(true) {
+                        console.log("Resubscribing!")
+                        
+                        //await this.subscription.unsubscribeAll()
+                        try {
+                            await this.subscription.subscribe([this.decoder], this.dispatch)
+                            console.log("Resubscribed")
+                            break;
+                        } catch (e) {
+                            console.log(e)
+                        }
+                        await sleep(5000)
+                    }
                 } else {
-                    throw error;
+                    console.error(error);
                 }
+            } finally {
+                this.resubscribing = false
             }
         }
+    }
+
+    getConnections = () => {
+        return {connections: this.node.libp2p.getConnections(), subscription: !this.resubscribing}
     }
 }
 
@@ -272,4 +288,8 @@ function reviver(key: any, value: any) {
         }
     }
     return value;
+}
+
+async function sleep(msec: number) {
+	return await new Promise((r) => setTimeout(r, msec))
 }

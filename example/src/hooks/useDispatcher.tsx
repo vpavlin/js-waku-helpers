@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useState } from "react"
 import { Dispatcher } from "../lib/dispatcher"
 import { useContentPair, useWaku } from "@waku/react"
 import { LightNode } from "@waku/interfaces"
+import { CONTENT_TOPIC_PAIRING } from "../constants"
+import getDispatcher from "../lib"
 
 type DispatcherContextData = {
     dispatcher: Dispatcher | undefined
@@ -30,29 +32,32 @@ export const DispatcherProvider: React.FunctionComponent<ProviderProps> = (props
     const [connected, setConnected] = useState(false)
     const [peerCount, setPeerCount] = useState(0)
     const [peers, setPeers] = useState<string[]>()
-    const { node } = useWaku<LightNode>()
-    const { encoder, decoder} = useContentPair()
+    const [subscription, setSubscription] = useState<boolean>()
+
 
     useEffect(() => {
-        if (!node || !encoder || !decoder) return
-        let d: Dispatcher
         (async () => {
-            d = new Dispatcher(node, encoder, decoder)
-            await d.start()
-            setDispatcher(d)
+            const d = await getDispatcher()
+            if (d.isRunning()) {
+                setDispatcher(d)
+            }
         })()
+    }, [])
+
+    useEffect(() => {
+        if (!dispatcher) return
         const interval = setInterval(() => {
-            setPeers(node.libp2p.getConnections().map((p) => p.remoteAddr.toString()))
+            const connInfo = dispatcher.getConnections()
+            setPeers(connInfo.connections.map((p) => p.remoteAddr.toString()))
+            setConnected(connInfo.subscription)
             
             //console.log(JSON.stringify(node.libp2p.getConnections()))
         }, 1000)
 
         return () => {
-            console.log("Stop?")
-            d.stop()
             clearInterval(interval)
         }
-    }, [node, encoder, decoder])
+    }, [dispatcher])
 
     useEffect(() => {
         if (!peers) return
