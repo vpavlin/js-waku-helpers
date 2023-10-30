@@ -61,7 +61,6 @@ export const DispatcherProvider: React.FunctionComponent<ProviderProps> = (props
 
     useEffect(() => {
         if (!peers) return
-        setConnected(peers.length > 0)
         setPeerCount(peers.length)
     }, [peers])
 

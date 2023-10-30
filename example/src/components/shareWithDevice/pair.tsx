@@ -61,17 +61,12 @@ const Pair = () => {
     const [openList, setOpenList] = useState<string | undefined>(defaultTarget)
 
     useEffect(() => {
-        console.log(search)
         if (!search || toSend) return
 
         let shared: string = ""
-        const name = query.get("name")
-        const description = query.get("description")
         const link = query.get("link")
 
-        if (name) shared += name
-        if (description) shared += " - " + description
-        if (link) shared += "\n\n" + link
+        if (link) shared = link
 
         setToSend(shared != "" ? shared : undefined)
     }, [search])

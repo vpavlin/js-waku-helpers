@@ -26,8 +26,6 @@
     "action": "/",
     "method": "GET",
     "params": {
-      "title": "name",
-      "text": "description",
       "url": "link"
     }
   }
