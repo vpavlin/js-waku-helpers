@@ -14,7 +14,7 @@ import {
     Protocols,
 } from "@waku/interfaces"
 import { encrypt, decrypt } from "../../node_modules/@waku/message-encryption/dist/crypto/ecies.js"
-import { BaseWallet, ethers } from "ethers"
+import { BaseWallet, ethers, keccak256 } from "ethers"
 
 
 type IDispatchMessage = {
@@ -41,6 +41,11 @@ export type DispatchMetadata = {
     ephemeral: boolean | undefined
 }
 
+type EmitCache = {
+    msg: IMessage
+    encoder: IEncoder
+}
+
 type MessageType = string
 type DispatchCallback = (payload: any, signer: Signer, meta: DispatchMetadata) => void
 
@@ -56,6 +61,10 @@ export class Dispatcher {
     decryptionKeys: Uint8Array[]
     hearbeatInterval: NodeJS.Timer | undefined
     resubscribing: boolean = false
+    msgHashes: string[] = []
+    emitCache: EmitCache[] = []
+    reemitting: boolean = false
+    reemitInterval: NodeJS.Timer | undefined = undefined
     constructor(node: LightNode, contentTopic: string, ephemeral: boolean) {
         this.mapping = new Map<MessageType, DispachInfo[]>()
         this.node = node
@@ -103,11 +112,13 @@ export class Dispatcher {
             await this.checkSubscription()
         })
         this.hearbeatInterval = setInterval(() => this.checkSubscription(), 10000)
+        //this.reemitInterval = setInterval(() => this.emitFromCache(), 10000)
     }
 
     stop = () => {
         this.running = false
         clearInterval(this.hearbeatInterval)
+        //clearInterval(this.reemitInterval)
         this.subscription?.unsubscribeAll()
         this.subscription = undefined
         this.mapping.clear()
@@ -124,6 +135,7 @@ export class Dispatcher {
 
     dispatch = async (msg: IDecodedMessage, fromStorage: boolean = false) => {
         if (!fromStorage) console.log("delivered")
+
         let msgPayload = msg.payload
         let encrypted = false
         if (this.decryptionKeys.length > 0) {
@@ -139,6 +151,18 @@ export class Dispatcher {
                 //console.log(msgPayload)
             }
         }
+
+        const input = new Uint8Array([...ethers.toUtf8Bytes(msg.contentTopic), ...msg.payload, ...ethers.toUtf8Bytes(msg.timestamp!.toString()), ...ethers.toUtf8Bytes(msg.pubsubTopic)])
+        const hash = keccak256(input).slice(0, 10)
+        if (this.msgHashes.indexOf(hash) >= 0) {
+            console.log("Message already delivered")
+            return   
+        }
+        if (this.msgHashes.length > 100) {
+            console.log("Dropping old messages from hash cache")
+            this.msgHashes.slice(hash.length - 100, hash.length)
+        }
+        this.msgHashes.push(hash)
 
         try {
             const dmsg: IDispatchMessage = JSON.parse(bytesToUtf8(msgPayload), reviver)
@@ -176,7 +200,7 @@ export class Dispatcher {
                         continue
                     }
                 }
-
+                
                 dispatchInfo.callback(payload, dmsg.signer, { encrypted: encrypted, fromStore: fromStorage, timestamp: dmsg.timestamp, ephemeral: msg.ephemeral, contentTopic: msg.contentTopic })
             }
         } catch (e) {
@@ -211,11 +235,15 @@ export class Dispatcher {
 
         const encoder = ephemeral ? this.encoderEphemeral : this.encoder
         const res = await this.node.lightPush.send(encoder, msg)
+        /*if (res && res.errors && res.errors.length > 0) {
+            msg.timestamp = new Date()
+            this.emitCache.push({msg: msg, encoder: encoder})
+        }*/
 
         return res
     }
 
-    dispatchQuery = async (options: StoreQueryOptions = {pageDirection: PageDirection.FORWARD, pageSize: 20}) => {
+    dispatchQuery = async (options: StoreQueryOptions = {pageDirection: PageDirection.FORWARD, pageSize: 20}, live: boolean = false) => {
         for await (const messagesPromises of this.node.store.queryGenerator(
             [this.decoder],
             options
@@ -225,37 +253,56 @@ export class Dispatcher {
                     .map(async (p) => {
                         const msg = await p;
                         if (msg)
-                            await this.dispatch(msg, true)
+                            await this.dispatch(msg, !live)
                     })
             );
         }
     }
 
+    emitFromCache = async () => {
+        if (this.reemitting) return
+        this.reemitting = true
+        if (this.emitCache.length > 0) {
+            const l = this.emitCache.length
+            for (let i = 0; i < l; i++) {
+                const toEmit = this.emitCache[0]
+                console.log("Trying to emit failed message from "+toEmit.msg.timestamp)
+                const res = await this.node.lightPush.send(toEmit.encoder, toEmit.msg)
+                if (res && res.errors && res.errors.length > 0) {
+                    break
+                }
+
+                this.emitCache.slice(1, l)
+                await sleep(1000)
+            }
+        }
+
+        this.reemitting = false
+
+    }
+
     checkSubscription = async () => {
         if (this.subscription && !this.resubscribing) {
             this.resubscribing = true
+            const start = new Date()
             try {
                 await this.subscription.ping();
             } catch (error) {
-                if (
-                    error instanceof Error &&
-                    error.message.includes("peer has no subscriptions")
-                ) {
-                    while(true) {
-                        console.log("Resubscribing!")
-                        
-                        //await this.subscription.unsubscribeAll()
-                        try {
-                            await this.subscription.subscribe([this.decoder], this.dispatch)
-                            console.log("Resubscribed")
-                            break;
-                        } catch (e) {
-                            console.log(e)
-                        }
-                        await sleep(5000)
+                while(true) {
+                    console.log("Resubscribing!")
+                    
+                    //await this.subscription.unsubscribeAll()
+                    try {
+                        await this.subscription.subscribe([this.decoder], this.dispatch)
+                        console.log("Resubscribed")
+                        const end = new Date()
+                        console.log(`Query: ${start.toString()} -> ${end.toString()}`)
+                        await this.dispatchQuery({timeFilter: {startTime: new Date(start.setSeconds(start.getSeconds()-30)), endTime: end}}, true)
+                        break;
+                    } catch (e) {
+                        console.log(e)
                     }
-                } else {
-                    console.error(error);
+                    await sleep(5000)
                 }
             } finally {
                 this.resubscribing = false

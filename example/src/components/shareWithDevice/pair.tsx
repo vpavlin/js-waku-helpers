@@ -93,7 +93,7 @@ const Pair = () => {
 
                     let values = x.get(signer)
                     if (values) {
-                        values = [{value: payload.value, timestamp: meta.timestamp || new Date().toString()}, ...values]
+                        values = [{value: payload.value, timestamp: meta.timestamp || new Date().toString()}, ...values.filter((v) => v.timestamp != meta.timestamp || v.value != payload.value)]
                         x.set(signer, values)
 
                         if (!isMobile && Notification && !meta.fromStore) {
