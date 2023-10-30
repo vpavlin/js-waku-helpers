@@ -317,7 +317,7 @@ export class Dispatcher {
                         console.log("Resubscribed")
                         const end = new Date()
                         console.log(`Query: ${start.toString()} -> ${end.toString()}`)
-                        await this.dispatchQuery({timeFilter: {startTime: new Date(start.setSeconds(start.getSeconds()-30)), endTime: end}}, true)
+                        await this.dispatchQuery({timeFilter: {startTime: new Date(start.setSeconds(start.getSeconds()-120)), endTime: end}}, true)
                         break;
                     } catch (e) {
                         console.log(e)
