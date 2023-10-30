@@ -2,8 +2,8 @@ import './App.css';
 import { Client, Game } from './components/dispatcher/game';
 import { DispatcherProvider } from './hooks/useDispatcher';
 import Pair from './components/shareWithDevice/pair';
-//import { HeliaProvider } from './hooks/useHelia';
-//import IPFS from './components/shareWithDevice/ipfs';
+import { Outlet, Route, Routes } from 'react-router-dom';
+
 
 
 
@@ -16,25 +16,18 @@ const NODE_REQUIREMENTS = {
 function App() {
   return (
     <div className="App text-center">
-      
-          <DispatcherProvider>
-            <div>
-              <Pair />
-            </div>
-          </DispatcherProvider>
+      <Routes>
+          <Route path='/' element={
+              <DispatcherProvider>
+                <div>
+                  <Pair />
+                </div>
+              </DispatcherProvider>
+            }>
+          </Route>
+        </Routes>
     </div>
   );
 }
 
 export default App;
-
-/*            <div style={{display: "none"}}>
-              <Game />
-              <div>
-                <Client />
-              </div>
-            </div>
-<HeliaProvider>
-            <IPFS />
-            </HeliaProvider>
-            */

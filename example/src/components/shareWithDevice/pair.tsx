@@ -11,13 +11,18 @@ import { ToastContainer, toast } from "react-toastify";
 import 'react-toastify/dist/ReactToastify.css';
 import Linkify from "react-linkify"
 import getDispatcher from "../../lib"
+import { useLocation } from "react-router-dom";
 
 type RecievedData = {
     value: string
     timestamp: string
 }
 
+
 const Pair = () => {
+    const { search } = useLocation();
+    const query = new URLSearchParams(search)
+
     const {connected, dispatcher, peerCount, peers} = useDispatcher()
     const {wallet, publicKey, privateKey} = useIdentity("shareWithDevice", "xyz")
     const isMobile  = useIsMobile()
@@ -55,6 +60,21 @@ const Pair = () => {
 
     const [openList, setOpenList] = useState<string | undefined>(defaultTarget)
 
+    useEffect(() => {
+        console.log(search)
+        if (!search || toSend) return
+
+        let shared: string = ""
+        const name = query.get("name")
+        const description = query.get("description")
+        const link = query.get("link")
+
+        if (name) shared += name
+        if (description) shared += " - " + description
+        if (link) shared += "\n\n" + link
+
+        setToSend(shared != "" ? shared : undefined)
+    }, [search])
 
     useEffect(() => {
         if (!dispatcher || !privateKey) return
