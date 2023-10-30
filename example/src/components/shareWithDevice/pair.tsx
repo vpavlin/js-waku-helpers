@@ -296,7 +296,7 @@ const Pair = () => {
                                         <thead><tr><th>Message</th><th>Time</th></tr></thead>
                                         <tbody className="">
                                         {
-                                            received.get(p.address)?.map((v, i) => <tr key={i + v.timestamp} className=""><td className="overflow-auto max-w-md"><Linkify>{v.value}</Linkify></td><td className="text-right">{new Date(parseInt(v.timestamp)).toLocaleString()})</td></tr>)
+                                            received.get(p.address)?.map((v, i) => <tr key={i + v.timestamp} className=""><td className="overflow-auto break-words max-w-md"><Linkify>{v.value}</Linkify></td><td className="text-right">{new Date(parseInt(v.timestamp)).toLocaleString()})</td></tr>)
                                         }
                                         </tbody>
                                     </table>
