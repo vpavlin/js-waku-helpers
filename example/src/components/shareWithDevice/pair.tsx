@@ -23,7 +23,7 @@ const Pair = () => {
     const { search } = useLocation();
     const query = new URLSearchParams(search)
 
-    const {connected, dispatcher, peerCount, peers} = useDispatcher()
+    const {connected, dispatcher, peerCount, peers, subscriptionFailedAttempts} = useDispatcher()
     const {wallet, publicKey, privateKey} = useIdentity("shareWithDevice", "xyz")
     const isMobile  = useIsMobile()
 
@@ -244,8 +244,13 @@ const Pair = () => {
     }
 
     return (<>
-    <div className={`lg:fixed top right-0 m-5 p-3 items-center justify-center badge ${connected ? "badge-success" : "badge-error"}`}>
-        <div className="">Waku { peerCount > 0 && <span className="badge badge-neutral inline-block ml-2 align-top tooltip tooltip-bottom" data-tip={peers && peers.join("\n")}>{peerCount}</span>}</div>
+    <div className={`lg:fixed top right-0 m-3 items-center justify-center`}>
+        <div className={` m-3 p-3 badge badge-neutral`}>
+            <div className="">Waku { peerCount > 0 && <span className="badge badge-primary inline-block ml-2 align-top tooltip tooltip-bottom break-words" data-tip={peers && peers.join("\n")}>{peerCount}</span>}</div>
+        </div>
+        <div className={`my-3 p-3 badge ${connected ? "badge-success" : "badge-error"}`}>
+            <div className="">Filter { subscriptionFailedAttempts > 0 && <span className="badge badge-neutral inline-block ml-2 align-top">{subscriptionFailedAttempts}</span>}</div>
+        </div>
     </div>
     {dispatcher && publicKey ?
         <div className="text-center m-auto w-full max-w-xl">

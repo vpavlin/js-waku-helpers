@@ -49,6 +49,8 @@ type EmitCache = {
 type MessageType = string
 type DispatchCallback = (payload: any, signer: Signer, meta: DispatchMetadata) => void
 
+const MAX_RESUBSCRIBE_ATTEMPTS = 10
+
 export class Dispatcher {
     mapping: Map<MessageType, DispachInfo[]>
     node: LightNode
@@ -68,6 +70,7 @@ export class Dispatcher {
     reemitInterval: NodeJS.Timer | undefined = undefined
 
     filterConnected:boolean = false
+
     constructor(node: LightNode, contentTopic: string, ephemeral: boolean) {
         this.mapping = new Map<MessageType, DispachInfo[]>()
         this.node = node
@@ -125,8 +128,8 @@ export class Dispatcher {
         //clearInterval(this.reemitInterval)
         this.subscription?.unsubscribeAll()
         this.subscription = undefined
+        this.msgHashes = []
         this.mapping.clear()
-
     }
 
     isRunning = (): boolean => {
@@ -298,15 +301,18 @@ export class Dispatcher {
                     
                     //await this.subscription.unsubscribeAll()
                     try {
-                        try {
-                            if (this.subscription)
-                                await this.subscription.unsubscribeAll()
-                        } catch (unE) {
-                            console.log(unE)
-                        } finally {
-                            this.subscription = undefined
+                        if (this.resubscribeAttempts > MAX_RESUBSCRIBE_ATTEMPTS || !this.subscription) {
+                            try {
+                                if (this.subscription)
+                                    await this.subscription.unsubscribeAll()
+                            } catch (unE) {
+                                console.log(unE)
+                            } finally {
+                                this.subscription = undefined
+                            }
+                            this.subscription = await this.node.filter.createSubscription()
                         }
-                        this.subscription = await this.node.filter.createSubscription()
+
                         await this.subscription.subscribe([this.decoder], this.dispatch)
                         console.log("Resubscribed")
                         const end = new Date()
@@ -315,10 +321,12 @@ export class Dispatcher {
                         break;
                     } catch (e) {
                         console.log(e)
+                        this.resubscribeAttempts++
                     }
                     await sleep(5000)
                 }
             } finally {
+                this.resubscribeAttempts = 0
                 this.resubscribing = false
                 this.filterConnected = true
             }
@@ -326,7 +334,7 @@ export class Dispatcher {
     }
 
     getConnections = () => {
-        return {connections: this.node.libp2p.getConnections(), subscription: this.filterConnected}
+        return {connections: this.node.libp2p.getConnections(), subscription: this.filterConnected, subsciptionAttempts: this.resubscribeAttempts}
     }
 }
 

@@ -11,6 +11,8 @@ type DispatcherContextData = {
     connected: boolean
     peerCount: number
     peers: string[] | undefined
+    subscriptionFailedAttempts: number
+
     //setDispatcher: (d: Dispatcher) => void
 }
 
@@ -18,7 +20,8 @@ const defaultData:DispatcherContextData = {
     dispatcher: undefined,
     connected: false,
     peerCount: 0,
-    peers: []
+    peers: [],
+    subscriptionFailedAttempts: 0
 }
 
 const DispatcherContext = React.createContext(defaultData)
@@ -30,6 +33,7 @@ type ProviderProps = ReactChildrenProps
 export const DispatcherProvider: React.FunctionComponent<ProviderProps> = (props: ProviderProps) => {
     const [dispatcher, setDispatcher] = useState<Dispatcher>()
     const [connected, setConnected] = useState(false)
+    const [subscriptionFailedAttempts, setSubFailedAttempts] = useState(0)
     const [peerCount, setPeerCount] = useState(0)
     const [peers, setPeers] = useState<string[]>()
     const [subscription, setSubscription] = useState<boolean>()
@@ -50,6 +54,7 @@ export const DispatcherProvider: React.FunctionComponent<ProviderProps> = (props
             const connInfo = dispatcher.getConnections()
             setPeers(connInfo.connections.map((p) => p.remoteAddr.toString()))
             setConnected(connInfo.subscription)
+            setSubFailedAttempts(connInfo.subsciptionAttempts)
             
             //console.log(JSON.stringify(node.libp2p.getConnections()))
         }, 1000)
@@ -69,7 +74,8 @@ export const DispatcherProvider: React.FunctionComponent<ProviderProps> = (props
         connected,
         peerCount,
         peers,
-    }), [dispatcher, connected, peerCount, peers])
+        subscriptionFailedAttempts,
+    }), [dispatcher, connected, peerCount, peers, subscriptionFailedAttempts])
     return <DispatcherContext.Provider value={result}>
         {props.children}
     </DispatcherContext.Provider>

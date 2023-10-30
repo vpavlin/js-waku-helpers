@@ -15,7 +15,7 @@ const NODE_REQUIREMENTS = {
 
 function App() {
   return (
-    <div className="App text-center">
+    <div className="text-center">
       <Routes>
           <Route path='/' element={
               <DispatcherProvider>
