@@ -301,7 +301,7 @@ export class Dispatcher {
                     
                     //await this.subscription.unsubscribeAll()
                     try {
-                        if (this.resubscribeAttempts > MAX_RESUBSCRIBE_ATTEMPTS || !this.subscription) {
+                        if (this.resubscribeAttempts >= MAX_RESUBSCRIBE_ATTEMPTS || !this.subscription) {
                             try {
                                 if (this.subscription)
                                     await this.subscription.unsubscribeAll()

@@ -10,7 +10,6 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import { ToastContainer, toast } from "react-toastify";
 import 'react-toastify/dist/ReactToastify.css';
 import Linkify from "react-linkify"
-import getDispatcher from "../../lib"
 import { useLocation } from "react-router-dom";
 
 type RecievedData = {
@@ -57,19 +56,20 @@ const Pair = () => {
     const [toSend, setToSend] = useState<string>()
     const [receivers, setReceivers] = useState<string[]>([])
     const [sending, setSending] = useState(false)
+    const [shared, setShared] = useState(false)
 
     const [openList, setOpenList] = useState<string | undefined>(defaultTarget)
 
     useEffect(() => {
-        if (!search || !query || toSend) return
+        if (!search || !query || shared || toSend) return
 
-        let shared: string = ""
+        let sharedStr: string = ""
         const description = query.get("description")
 
-        if (description) shared = description
+        if (description) sharedStr = description
 
-        setToSend(shared != "" ? shared : undefined)
-    }, [search, query])
+        setToSend(sharedStr != "" ? sharedStr : undefined)
+    }, [search, query, shared])
 
     useEffect(() => {
         if (!dispatcher || !privateKey) return
@@ -237,6 +237,8 @@ const Pair = () => {
                 } else {
                     toast("Successfully pushed the message!")
                     setToSend("")
+                    setShared(true)
+                    window.history.replaceState(null, "", "/")
                 }
                 setSending(false)
             }
@@ -289,7 +291,7 @@ const Pair = () => {
             {
                 pairedAccounts.size > 0 &&
                 <div>
-                    <div><textarea className="textarea textarea-bordered min-h-[100px] min-w-[300px] w-full" onChange={(e) => setToSend(e.target.value)} value={toSend}/></div>
+                    <div><textarea className="textarea textarea-bordered min-h-[100px] min-w-[300px] w-full" onChange={(e) => setToSend(e.target.value)} value={toSend && toSend}/></div>
                     <div><button className="btn btn-lg" disabled={!dispatcher || !toSend || receivers.length == 0 || sending} onClick={() => send()}>{ sending ? "Sending..." : "Send"}</button></div>
                     <div>
                     {
