@@ -61,10 +61,13 @@ export class Dispatcher {
     decryptionKeys: Uint8Array[]
     hearbeatInterval: NodeJS.Timer | undefined
     resubscribing: boolean = false
+    resubscribeAttempts: number = 0
     msgHashes: string[] = []
     emitCache: EmitCache[] = []
     reemitting: boolean = false
     reemitInterval: NodeJS.Timer | undefined = undefined
+
+    filterConnected:boolean = false
     constructor(node: LightNode, contentTopic: string, ephemeral: boolean) {
         this.mapping = new Map<MessageType, DispachInfo[]>()
         this.node = node
@@ -105,6 +108,7 @@ export class Dispatcher {
         await waitForRemotePeer(this.node, [Protocols.LightPush, Protocols.Filter])
         this.subscription = await this.node.filter.createSubscription()
         await this.subscription.subscribe(this.decoder, this.dispatch)
+        this.filterConnected = true
         console.log("Subscribed...")
         this.node.libp2p.addEventListener("peer:disconnect", async (e) => {
             console.log("Peer disconnected, check subscription!")
@@ -284,15 +288,25 @@ export class Dispatcher {
     checkSubscription = async () => {
         if (this.subscription && !this.resubscribing) {
             this.resubscribing = true
-            const start = new Date()
             try {
                 await this.subscription.ping();
             } catch (error) {
+                this.filterConnected = false
+                const start = new Date()
                 while(true) {
                     console.log("Resubscribing!")
                     
                     //await this.subscription.unsubscribeAll()
                     try {
+                        try {
+                            if (this.subscription)
+                                await this.subscription.unsubscribeAll()
+                        } catch (unE) {
+                            console.log(unE)
+                        } finally {
+                            this.subscription = undefined
+                        }
+                        this.subscription = await this.node.filter.createSubscription()
                         await this.subscription.subscribe([this.decoder], this.dispatch)
                         console.log("Resubscribed")
                         const end = new Date()
@@ -306,12 +320,13 @@ export class Dispatcher {
                 }
             } finally {
                 this.resubscribing = false
+                this.filterConnected = true
             }
         }
     }
 
     getConnections = () => {
-        return {connections: this.node.libp2p.getConnections(), subscription: !this.resubscribing}
+        return {connections: this.node.libp2p.getConnections(), subscription: this.filterConnected}
     }
 }
 
