@@ -2,6 +2,7 @@ import { Protocols, createLightNode, waitForRemotePeer } from "@waku/sdk";
 import { Dispatcher } from "./dispatcher";
 import { bootstrap } from "@libp2p/bootstrap";
 import { CONTENT_TOPIC_PAIRING } from "../constants";
+import { Store } from "./storage/store";
 
 let dispatcher: Dispatcher | null = null
 let initialized = false
@@ -24,7 +25,8 @@ const getDispatcher = async () => {
     })
     await waitForRemotePeer(node, [Protocols.LightPush, Protocols.Filter, Protocols.Store])
     console.log("Creating dispatcher")
-    dispatcher = new Dispatcher(node, CONTENT_TOPIC_PAIRING, true)
+    const store = new Store("wakulink-test")
+    dispatcher = new Dispatcher(node, CONTENT_TOPIC_PAIRING, true, store)
     await dispatcher.start()
        
     return dispatcher

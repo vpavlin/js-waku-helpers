@@ -12,6 +12,7 @@ type DispatcherContextData = {
     peerCount: number
     peers: string[] | undefined
     subscriptionFailedAttempts: number
+    lastDelivered: number | undefined
 
     //setDispatcher: (d: Dispatcher) => void
 }
@@ -21,7 +22,8 @@ const defaultData:DispatcherContextData = {
     connected: false,
     peerCount: 0,
     peers: [],
-    subscriptionFailedAttempts: 0
+    subscriptionFailedAttempts: 0,
+    lastDelivered: undefined
 }
 
 const DispatcherContext = React.createContext(defaultData)
@@ -36,6 +38,7 @@ export const DispatcherProvider: React.FunctionComponent<ProviderProps> = (props
     const [subscriptionFailedAttempts, setSubFailedAttempts] = useState(0)
     const [peerCount, setPeerCount] = useState(0)
     const [peers, setPeers] = useState<string[]>()
+    const [lastDelivered, setLastDelivered] = useState<number>()
     const [subscription, setSubscription] = useState<boolean>()
 
 
@@ -51,10 +54,11 @@ export const DispatcherProvider: React.FunctionComponent<ProviderProps> = (props
     useEffect(() => {
         if (!dispatcher) return
         const interval = setInterval(() => {
-            const connInfo = dispatcher.getConnections()
+            const connInfo = dispatcher.getConnectionInfo()
             setPeers(connInfo.connections.map((p) => p.remoteAddr.toString()))
             setConnected(connInfo.subscription)
             setSubFailedAttempts(connInfo.subsciptionAttempts)
+            setLastDelivered(connInfo.lastDelivered)
             
             //console.log(JSON.stringify(node.libp2p.getConnections()))
         }, 1000)
@@ -75,7 +79,8 @@ export const DispatcherProvider: React.FunctionComponent<ProviderProps> = (props
         peerCount,
         peers,
         subscriptionFailedAttempts,
-    }), [dispatcher, connected, peerCount, peers, subscriptionFailedAttempts])
+        lastDelivered,
+    }), [dispatcher, connected, peerCount, peers, subscriptionFailedAttempts, lastDelivered])
     return <DispatcherContext.Provider value={result}>
         {props.children}
     </DispatcherContext.Provider>

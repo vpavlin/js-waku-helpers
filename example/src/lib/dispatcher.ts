@@ -15,9 +15,10 @@ import {
 } from "@waku/interfaces"
 import { encrypt, decrypt } from "../../node_modules/@waku/message-encryption/dist/crypto/ecies.js"
 import { BaseWallet, ethers, keccak256 } from "ethers"
+import { Direction, Store } from "./storage/store"
 
 
-type IDispatchMessage = {
+export type IDispatchMessage = {
     type: MessageType
     payload: any
     timestamp: string | undefined
@@ -49,7 +50,8 @@ type EmitCache = {
 type MessageType = string
 type DispatchCallback = (payload: any, signer: Signer, meta: DispatchMetadata) => void
 
-const MAX_RESUBSCRIBE_ATTEMPTS = 10
+const MAX_RESUBSCRIBE_ATTEMPTS = 5
+const DEFAULT_SUBSCRIBE_RETRY_MS = 5000
 
 export class Dispatcher {
     mapping: Map<MessageType, DispachInfo[]>
@@ -58,20 +60,27 @@ export class Dispatcher {
     encoder: IEncoder
     encoderEphemeral: IEncoder
     ephemeralDefault: boolean
-    subscription: IFilterSubscription | undefined
+
     running: boolean
+
     decryptionKeys: Uint8Array[]
+    
     hearbeatInterval: NodeJS.Timer | undefined
+    subscription: IFilterSubscription | undefined
     resubscribing: boolean = false
     resubscribeAttempts: number = 0
+    
+    filterConnected:boolean = false
+    lastDeliveredTimestamp:number | undefined= undefined 
+
     msgHashes: string[] = []
     emitCache: EmitCache[] = []
     reemitting: boolean = false
     reemitInterval: NodeJS.Timer | undefined = undefined
 
-    filterConnected:boolean = false
+    store: Store
 
-    constructor(node: LightNode, contentTopic: string, ephemeral: boolean) {
+    constructor(node: LightNode, contentTopic: string, ephemeral: boolean, store: Store) {
         this.mapping = new Map<MessageType, DispachInfo[]>()
         this.node = node
 
@@ -87,6 +96,8 @@ export class Dispatcher {
 
         this.subscription = undefined
         this.hearbeatInterval = undefined
+
+        this.store = store
     }
 
 
@@ -96,7 +107,7 @@ export class Dispatcher {
         }
         const dispatchInfos = this.mapping.get(typ)
         const newDispatchInfo = { callback: callback, verifySender: !!verifySender, acceptOnlyEncrypted: !!acceptOnlyEcrypted }
-        if (dispatchInfos?.find((di) => di.callback == newDispatchInfo.callback)) {
+        if (dispatchInfos?.find((di) => di.callback.toString() == newDispatchInfo.callback.toString())) {
             console.log("Skipping the callback setup - already exists")
             return
         }
@@ -153,20 +164,20 @@ export class Dispatcher {
                     encrypted = true
                     break
                 } catch (e) {
-                    //console.log(e)
+                    console.debug("Failed to decrypt: " + e)
                 }
-                //console.log(msgPayload)
+  
             }
         }
 
         const input = new Uint8Array([...ethers.toUtf8Bytes(msg.contentTopic), ...msg.payload, ...ethers.toUtf8Bytes(msg.timestamp!.toString()), ...ethers.toUtf8Bytes(msg.pubsubTopic)])
         const hash = keccak256(input).slice(0, 10)
         if (this.msgHashes.indexOf(hash) >= 0) {
-            console.log("Message already delivered")
+            console.debug("Message already delivered")
             return   
         }
         if (this.msgHashes.length > 100) {
-            console.log("Dropping old messages from hash cache")
+            console.debug("Dropping old messages from hash cache")
             this.msgHashes.slice(hash.length - 100, hash.length)
         }
         this.msgHashes.push(hash)
@@ -191,6 +202,7 @@ export class Dispatcher {
             for (const dispatchInfo of dispatchInfos) {
                 if (dispatchInfo.acceptOnlyEncrypted && !encrypted) {
                     console.log(`Message not encrypted, skipping (type: ${dmsg.type})`)
+                    continue
                 }
 
                 let payload = dmsg.payload
@@ -207,11 +219,25 @@ export class Dispatcher {
                         continue
                     }
                 }
+
+                this.lastDeliveredTimestamp = msg.timestamp?.getTime()|| Date.now()
+
+                if (!msg.ephemeral && !fromStorage) {
+                    this.store.set({direction: Direction.In, dmsg: {
+                        contentTopic: msg.contentTopic,
+                        ephemeral: msg.ephemeral,
+                        meta: msg.meta,
+                        payload: msg.payload,
+                        pubsubTopic: msg.pubsubTopic,
+                        rateLimitProof: msg.rateLimitProof,
+                        timestamp: msg.timestamp,
+                    }, hash: hash})
+                }
                 
                 dispatchInfo.callback(payload, dmsg.signer, { encrypted: encrypted, fromStore: fromStorage, timestamp: dmsg.timestamp, ephemeral: msg.ephemeral, contentTopic: msg.contentTopic })
             }
         } catch (e) {
-            //console.error(e)
+            console.debug(e)
         }
     }
 
@@ -229,7 +255,7 @@ export class Dispatcher {
             dmsg.signature = wallet.signMessageSync(JSON.stringify(dmsg))
         }
 
-        console.log(dmsg)
+        console.debug(dmsg)
         let payloadArray = utf8ToBytes(JSON.stringify(dmsg, replacer))
         if (encryptionPublicKey) {
             const buffer = await encrypt(encryptionPublicKey, payloadArray)
@@ -250,11 +276,52 @@ export class Dispatcher {
         return res
     }
 
+    dispatchLocalQuery = async () => {
+        let messages = await this.store.getAll()
+        console.log("Here mess")
+        console.log(messages.length)
+        let msg
+        let start = new Date(0)
+
+        //console.log(messages)
+        messages = messages.sort((a, b) => {
+            if (!a.dmsg.timestamp)
+                return 1
+
+            if (!b.dmsg.timestamp)
+                return -1
+
+            if (a.dmsg.timestamp < b.dmsg.timestamp)
+                return -1
+
+            return 1 
+        })
+        //console.log(messages)
+        for (let i = 0; i<messages.length; i++) {
+            msg = messages[i]
+            await this.dispatch(msg.dmsg, true)
+            if (msg.dmsg.timestamp && msg.dmsg.timestamp > start)
+                start = msg.dmsg.timestamp
+        }
+
+        console.log(start)
+
+        if (start) {
+            while(!this.filterConnected) {console.log("sleeping"); await sleep(1_000)}
+            console.log("Query!")
+            let end = new Date() 
+            await this.dispatchQuery({pageDirection: PageDirection.FORWARD, pageSize: 20, timeFilter: {startTime: new Date(start.setTime(start.getTime()-3600*1000)), endTime: new Date(end.setTime(end.getTime()+3600*1000))}}, true)
+        }
+    }
+
     dispatchQuery = async (options: StoreQueryOptions = {pageDirection: PageDirection.FORWARD, pageSize: 20}, live: boolean = false) => {
+        console.log(options)
+        console.log(this.node.store)
         for await (const messagesPromises of this.node.store.queryGenerator(
             [this.decoder],
             options
         )) {
+            console.log("querying")
             await Promise.all(
                 messagesPromises
                     .map(async (p) => {
@@ -298,6 +365,7 @@ export class Dispatcher {
                 const start = new Date()
                 while(true) {
                     console.log("Resubscribing!")
+                    console.log(this.subscription)
                     
                     //await this.subscription.unsubscribeAll()
                     try {
@@ -311,6 +379,7 @@ export class Dispatcher {
                                 this.subscription = undefined
                             }
                             this.subscription = await this.node.filter.createSubscription()
+                            console.log("Created new subscription")
                         }
 
                         await this.subscription.subscribe([this.decoder], this.dispatch)
@@ -320,10 +389,10 @@ export class Dispatcher {
                         await this.dispatchQuery({timeFilter: {startTime: new Date(start.setSeconds(start.getSeconds()-120)), endTime: end}}, true)
                         break;
                     } catch (e) {
-                        console.log(e)
+                        console.debug("Failed to resubscribe: " + e)
                         this.resubscribeAttempts++
                     }
-                    await sleep(5000)
+                    await sleep(DEFAULT_SUBSCRIBE_RETRY_MS * this.resubscribeAttempts)
                 }
             } finally {
                 this.resubscribeAttempts = 0
@@ -333,8 +402,13 @@ export class Dispatcher {
         }
     }
 
-    getConnections = () => {
-        return {connections: this.node.libp2p.getConnections(), subscription: this.filterConnected, subsciptionAttempts: this.resubscribeAttempts}
+    getConnectionInfo = () => {
+        return {
+            connections: this.node.libp2p.getConnections(),
+            subscription: this.filterConnected,
+            subsciptionAttempts: this.resubscribeAttempts,
+            lastDelivered: this.lastDeliveredTimestamp
+        }
     }
 }
 

@@ -22,7 +22,7 @@ const Pair = () => {
     const { search } = useLocation();
     const query = new URLSearchParams(search)
 
-    const {connected, dispatcher, peerCount, peers, subscriptionFailedAttempts} = useDispatcher()
+    const {connected, dispatcher, peerCount, peers, subscriptionFailedAttempts, lastDelivered} = useDispatcher()
     const {wallet, publicKey, privateKey} = useIdentity("shareWithDevice", "xyz")
     const isMobile  = useIsMobile()
 
@@ -77,29 +77,7 @@ const Pair = () => {
 
 
         dispatcher.registerKey(privateKey)
-        dispatcher.on("verify", (payload: Verify, signer: Signer, meta: DispatchMetadata) => {
-            console.log(payload)
-            if (signer == payload.address) {
-                setSyncCode(payload.code)
-                setPairingAccount(payload.address, payload.publicKey, "")
-                console.log(payload.publicKey)
-            }
-        }, true)
-        dispatcher.on("paired", (payload: Paired, signer: Signer, meta: DispatchMetadata) => {
-            if (signer == payload.address) {
-                setPairedAccounts((x) => {
-                    if(x.has(payload.address)) return x
 
-                    x.set(payload.address, {address: payload.address, name: payload.name, publicKey: pairingAccountRef.current?.publicKey!})
-                    setPairingAccount("", "", "")
-                    return new Map<string, PairedAccount>(x)
-                })
-                setPairMe(false)
-                setPairWith(false)
-                setVerifySent(false)
-                setSyncCode(undefined)
-            }
-        }, true)
         dispatcher.on("send", (payload: Send, signer: Signer, meta: DispatchMetadata) => {
             if (signer && pairedAccounts.has(signer)) {
                 setReceived((x) => {
@@ -129,6 +107,30 @@ const Pair = () => {
                 })  
             }
         }, true, true)
+
+        dispatcher.on("verify", (payload: Verify, signer: Signer, meta: DispatchMetadata) => {
+            console.log(payload)
+            if (signer == payload.address) {
+                setSyncCode(payload.code)
+                setPairingAccount(payload.address, payload.publicKey, "")
+                console.log(payload.publicKey)
+            }
+        }, true)
+        dispatcher.on("paired", (payload: Paired, signer: Signer, meta: DispatchMetadata) => {
+            if (signer == payload.address) {
+                setPairedAccounts((x) => {
+                    if(x.has(payload.address)) return x
+
+                    x.set(payload.address, {address: payload.address, name: payload.name, publicKey: pairingAccountRef.current?.publicKey!})
+                    setPairingAccount("", "", "")
+                    return new Map<string, PairedAccount>(x)
+                })
+                setPairMe(false)
+                setPairWith(false)
+                setVerifySent(false)
+                setSyncCode(undefined)
+            }
+        }, true)
         dispatcher.on("confirm", (payload: Confirm, signer: Signer, meta: DispatchMetadata) => {
             console.log(syncCodeRef.current)
             if (signer == payload.address && payload.code == syncCodeRef.current && pairingAccountRef.current) {
@@ -148,13 +150,20 @@ const Pair = () => {
                 setVerifySent(false)
             }
         }, true)
-        dispatcher.dispatchQuery()
+        
 
         return () => {
             setReceived(new Map<string, RecievedData[]>())
         }
 
     }, [dispatcher, privateKey])
+
+    useEffect(() => {
+        if (!dispatcher) return
+        
+        dispatcher.dispatchLocalQuery()
+        
+    }, [dispatcher])
 
     useEffect(() => {
         if (pairedAccounts.size == 0) {
@@ -246,15 +255,15 @@ const Pair = () => {
     }
 
     return (<>
-    <div className={`lg:fixed top right-0 m-3 items-center justify-center`}>
+    <div className={`lg:fixed lg:right-20 top right-0 m-3 items-center justify-center`}>
         <div className={` m-3 p-3 badge badge-neutral`}>
             <div className="">Waku { peerCount > 0 && <span className="badge badge-primary inline-block ml-2 align-top tooltip tooltip-bottom break-words" data-tip={peers && peers.join("\n")}>{peerCount}</span>}</div>
         </div>
         <div className={`my-3 p-3 badge ${connected ? "badge-success" : "badge-error"}`}>
-            <div className="">Filter { subscriptionFailedAttempts > 0 && <span className="badge badge-neutral inline-block ml-2 align-top">{subscriptionFailedAttempts}</span>}</div>
+            <div className=" tooltip tooltip-bottom" data-tip={lastDelivered && (new Date(lastDelivered)).toLocaleString()}>Filter { subscriptionFailedAttempts > 0 && <span className="badge badge-neutral inline-block ml-2 align-top" >{subscriptionFailedAttempts}</span>}</div>
         </div>
     </div>
-    {dispatcher && publicKey ?
+    {publicKey ?
         <div className="text-center m-auto w-full max-w-xl">
             <div className="my-2"><input className="input input-bordered" type="text" onChange={(e) => setDeviceName(e.target.value)} value={deviceName} placeholder="Device Name" /></div>
             <button className="btn btn-lg m-1" onClick={() => setPairWith(!pairWith)}>{ pairWith ? "Cancel" : "Pair With"}</button>
@@ -283,7 +292,7 @@ const Pair = () => {
                         syncCode && pairingAccount?.publicKey &&
                         <div>
                             <div>Sync Code: {syncCode}</div>
-                            <button className="btn btn-lg" disabled={!deviceName} onClick={() => dispatcher.emit("confirm", {address: wallet?.address, code: syncCode, name: deviceName} as Confirm, wallet, utils.hexToBytes(pairingAccount.publicKey))}>Confirm</button>
+                            <button className="btn btn-lg" disabled={!deviceName || !dispatcher} onClick={() => dispatcher && dispatcher.emit("confirm", {address: wallet?.address, code: syncCode, name: deviceName} as Confirm, wallet, utils.hexToBytes(pairingAccount.publicKey))}>Confirm</button>
                         </div>
                     }
                 </div>
