@@ -5,16 +5,17 @@ import { utils } from "@noble/secp256k1"
 import { useEffect, useRef, useState } from "react";
 import { Confirm, Paired, PairedAccount, PairedAccounts, Send, Verify } from "./types";
 import { QrScanner } from "@yudiel/react-qr-scanner";
-import { DispatchMetadata, Signer } from "../../lib/dispatcher";
+import { DispatchMetadata, Signer } from "waku-dispatcher";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { ToastContainer, toast } from "react-toastify";
 import 'react-toastify/dist/ReactToastify.css';
 import Linkify from "react-linkify"
 import { useLocation } from "react-router-dom";
+//import SendFile from "./sendfile";
 
 type RecievedData = {
     value: string
-    timestamp: string
+    timestamp: number
 }
 
 
@@ -72,7 +73,7 @@ const Pair = () => {
     }, [search, query, shared])
 
     useEffect(() => {
-        if (!dispatcher || !privateKey) return
+        if (!dispatcher || !privateKey || !wallet) return
         console.log("Setting up dispatcher")
 
 
@@ -86,12 +87,11 @@ const Pair = () => {
 
                     let values = x.get(signer)
                     if (values) {
-                        values = [{value: payload.value, timestamp: meta.timestamp || new Date().toString()}, ...values.filter((v) => v.timestamp != meta.timestamp || v.value != payload.value)]
+                        values = [{value: payload.value, timestamp: meta.timestamp || Date.now()}, ...values.filter((v) => v.timestamp != meta.timestamp || v.value != payload.value)]
                         x.set(signer, values)
 
                         if (!isMobile && Notification && !meta.fromStore) {
                             const options: NotificationOptions = {
-                                timestamp: parseInt(meta.timestamp || new Date().toString()),
                                 body: payload.value,
                                 dir: 'ltr',
                                 icon: '/logo192.png',
@@ -142,6 +142,7 @@ const Pair = () => {
                     return new Map<string, PairedAccount>(x)
                 })
                 
+                // @ts-ignore
                 dispatcher.emit("paired", {address: wallet?.address, name: deviceName} as Paired, wallet, utils.hexToBytes(pairingAccountRef.current?.publicKey))
                 setScanner(false)
                 setSyncCode(undefined)
@@ -214,8 +215,19 @@ const Pair = () => {
 
     useEffect(() => {
         if (!pairingAccount || !publicKey || verifySent) return
-        setSyncCode("abcd")
-        dispatcher?.emit("verify", {address: wallet?.address!, publicKey: utils.bytesToHex(publicKey), code: "abcd"} as Verify, wallet, utils.hexToBytes(pairingAccount.publicKey))
+        let createRandomString = (length:number) => {
+            const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+            let result = "";
+            for (let i = 0; i < length; i++) {
+              result += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return result;
+          }
+        let code = createRandomString(5)
+        setSyncCode(code)
+
+        // @ts-ignore
+        dispatcher?.emit("verify", {address: wallet?.address!, publicKey: utils.bytesToHex(publicKey), code: code} as Verify, wallet, utils.hexToBytes(pairingAccount.publicKey))
         setVerifySent(true)
     }, [pairingAccount, publicKey, verifySent])
 
@@ -239,10 +251,12 @@ const Pair = () => {
             const p = pairedAccounts.get(r)
             if (p) {
                 setSending(true)
+
+                // @ts-ignore
                 const res = await dispatcher.emit("send", {value: toSend} as Send, wallet, utils.hexToBytes(p.publicKey), false)
                 console.log(res)
-                if (res.errors && res.errors.length > 0) {
-                    toast.error(`Failed to send message: ${res.errors.join(". ")}`)
+                if (!res) {
+                    toast.error(`Failed to send message`)
                 } else {
                     toast("Successfully pushed the message!")
                     setToSend("")
@@ -254,6 +268,10 @@ const Pair = () => {
         }
     }
 
+    // @ts-ignore
+    const confirmPairing = () => dispatcher && pairingAccount && dispatcher.emit("confirm", {address: wallet?.address, code: syncCode, name: deviceName} as Confirm,  wallet, utils.hexToBytes(pairingAccount.publicKey))
+
+   
     return (<>
     <div className={`lg:fixed lg:right-20 top right-0 m-3 items-center justify-center`}>
         <div className={` m-3 p-3 badge badge-neutral`}>
@@ -292,7 +310,8 @@ const Pair = () => {
                         syncCode && pairingAccount?.publicKey &&
                         <div>
                             <div>Sync Code: {syncCode}</div>
-                            <button className="btn btn-lg" disabled={!deviceName || !dispatcher} onClick={() => dispatcher && dispatcher.emit("confirm", {address: wallet?.address, code: syncCode, name: deviceName} as Confirm, wallet, utils.hexToBytes(pairingAccount.publicKey))}>Confirm</button>
+
+                            <button className="btn btn-lg" disabled={!deviceName || !dispatcher} onClick={() => confirmPairing()}>Confirm</button>
                         </div>
                     }
                 </div>
@@ -327,7 +346,7 @@ const Pair = () => {
                                         <thead><tr><th>Message</th><th>Time</th></tr></thead>
                                         <tbody className="">
                                         {
-                                            received.get(p.address)?.map((v, i) => <tr key={i + v.timestamp} className=""><td className="overflow-auto break-words max-w-md"><Linkify>{v.value}</Linkify></td><td className="text-right">{new Date(parseInt(v.timestamp)).toLocaleString()})</td></tr>)
+                                            received.get(p.address)?.map((v, i) => <tr key={i + v.timestamp} className=""><td className="overflow-auto break-words max-w-md"><Linkify>{v.value}</Linkify></td><td className="text-right">{new Date(v.timestamp).toLocaleString()})</td></tr>)
                                         }
                                         </tbody>
                                     </table>
@@ -359,3 +378,5 @@ const Pair = () => {
 }
 
 export default Pair;
+
+//                    <SendFile dispatcher={dispatcher} pairedAccounts={pairedAccounts} receivers={receivers} />

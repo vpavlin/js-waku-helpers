@@ -1,10 +1,6 @@
-import { ReactChildrenProps } from "@waku/react/dist/src/types"
 import React, { useEffect, useMemo, useState } from "react"
-import { Dispatcher } from "../lib/dispatcher"
-import { useContentPair, useWaku } from "@waku/react"
-import { LightNode } from "@waku/interfaces"
+import getDispatcher, { DispatchMetadata, Dispatcher, IDispatchMessage, Signer, destroyDispatcher } from "waku-dispatcher"
 import { CONTENT_TOPIC_PAIRING } from "../constants"
-import getDispatcher from "../lib"
 
 type DispatcherContextData = {
     dispatcher: Dispatcher | undefined
@@ -30,9 +26,12 @@ const DispatcherContext = React.createContext(defaultData)
 
 export const useDispatcher = () => React.useContext(DispatcherContext)
 
-type ProviderProps = ReactChildrenProps
+interface Props {
+    children: React.ReactNode
+}
 
-export const DispatcherProvider: React.FunctionComponent<ProviderProps> = (props: ProviderProps) => {
+
+export const DispatcherProvider = (props: Props) => {
     const [dispatcher, setDispatcher] = useState<Dispatcher>()
     const [connected, setConnected] = useState(false)
     const [subscriptionFailedAttempts, setSubFailedAttempts] = useState(0)
@@ -44,8 +43,8 @@ export const DispatcherProvider: React.FunctionComponent<ProviderProps> = (props
 
     useEffect(() => {
         (async () => {
-            const d = await getDispatcher()
-            if (d.isRunning()) {
+            const d = await getDispatcher(undefined, CONTENT_TOPIC_PAIRING, "wakulink", false)
+            if (d && d.isRunning()) {
                 setDispatcher(d)
             }
         })()
@@ -53,11 +52,10 @@ export const DispatcherProvider: React.FunctionComponent<ProviderProps> = (props
 
     useEffect(() => {
         if (!dispatcher) return
-        const interval = setInterval(() => {
-            const connInfo = dispatcher.getConnectionInfo()
-            setPeers(connInfo.connections.map((p) => p.remoteAddr.toString()))
+        const interval = setInterval(async () => {
+            const connInfo = await dispatcher.getConnectionInfo()
+            setPeers(connInfo.connections.map((p:any) => p.remoteAddr.toString()))
             setConnected(connInfo.subscription)
-            setSubFailedAttempts(connInfo.subsciptionAttempts)
             setLastDelivered(connInfo.lastDelivered)
             
             //console.log(JSON.stringify(node.libp2p.getConnections()))

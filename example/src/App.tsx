@@ -1,5 +1,4 @@
 import './App.css';
-import { Client, Game } from './components/dispatcher/game';
 import { DispatcherProvider } from './hooks/useDispatcher';
 import Pair from './components/shareWithDevice/pair';
 import { Outlet, Route, Routes } from 'react-router-dom';

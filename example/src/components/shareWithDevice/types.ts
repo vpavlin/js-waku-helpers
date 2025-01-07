@@ -25,4 +25,16 @@ export type PairedAccount = {
     name: string
 }
 
+export const RTCOfferType = "RTCOffer"
+export const RTCAnswerType = "RTCAnswer"
+
+export type RTCOffer = {
+    offer?: RTCSessionDescriptionInit
+    candidate?: RTCIceCandidate
+}
+
+export type RTCAnswer = {
+    answer: RTCSessionDescriptionInit
+}
+
 export type PairedAccounts = Map<string, PairedAccount>

@@ -22,5 +22,5 @@
   },
   "include": [
     "src"
-  ]
+, "src/hooks/useDispatcher.tsx", "../to_remove/dispatcher.ts", "../to_remove/game.tsx", "../to_remove/useHelia.tsx"  ]
 }
