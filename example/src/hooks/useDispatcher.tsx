@@ -42,15 +42,16 @@ export const DispatcherProvider = (props: Props) => {
     const [subscription, setSubscription] = useState<boolean>()
     const [node, setNode] = useState<LightNode>()
 
+    const bootstrapNodes = ["/dns4/waku.qaku.app/tcp/8001/wss/p2p/16Uiu2HAmGD8xui2PWDL9hK1TTQpjBhtaoKtqot8L9QPYMcJB3UuH"]
 
 
     useEffect(() => {
         (async () => {
             await createLightNode({
-                networkConfig: {clusterId: 1, shards: [0]},
+                networkConfig: {clusterId: 1, shards: [2]},
                 defaultBootstrap: true,
                 pingKeepAlive: 60,
-                //bootstrapPeers: bootstrapNodes,
+                bootstrapPeers: bootstrapNodes,
                 numPeersToUse: 3,
                 
             }).then( async (ln: LightNode) => {
