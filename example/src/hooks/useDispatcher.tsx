@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react"
 import getDispatcher, { DispatchMetadata, Dispatcher, IDispatchMessage, Signer, destroyDispatcher } from "waku-dispatcher"
 import { CONTENT_TOPIC_PAIRING } from "../constants"
+import { createLightNode, LightNode } from "@waku/sdk"
 
 type DispatcherContextData = {
     dispatcher: Dispatcher | undefined
@@ -39,14 +40,27 @@ export const DispatcherProvider = (props: Props) => {
     const [peers, setPeers] = useState<string[]>()
     const [lastDelivered, setLastDelivered] = useState<number>()
     const [subscription, setSubscription] = useState<boolean>()
+    const [node, setNode] = useState<LightNode>()
+
 
 
     useEffect(() => {
         (async () => {
-            const d = await getDispatcher(undefined, CONTENT_TOPIC_PAIRING, "wakulink", false)
-            if (d && d.isRunning()) {
-                setDispatcher(d)
-            }
+            await createLightNode({
+                networkConfig: {clusterId: 1, shards: [0]},
+                defaultBootstrap: true,
+                pingKeepAlive: 60,
+                //bootstrapPeers: bootstrapNodes,
+                numPeersToUse: 3,
+                
+            }).then( async (ln: LightNode) => {
+                    if (node) return
+                    setNode(ln)
+                    const d = await getDispatcher(ln, CONTENT_TOPIC_PAIRING, "wakulink", false)
+                    if (d && d.isRunning()) {
+                        setDispatcher(d)
+                }
+            })
         })()
     }, [])
 
